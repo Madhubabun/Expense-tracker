@@ -89,7 +89,11 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
             val result = withContext(Dispatchers.IO) { runCatching { SmsProcessor.importInbox(context) } }
             state.refresh()
             status = result.fold(
-                onSuccess = { "Scanned ${it.scanned} messages and added ${it.added} transactions. Tag them from “Needs a category”." },
+                onSuccess = {
+                    "Scanned ${it.scanned} messages and added ${it.added} transactions" +
+                        (if (it.skippedOld > 0) ", skipped ${it.skippedOld} from before your start date" else "") +
+                        ". Tag them from “Needs a category”."
+                },
                 onFailure = { "Import failed: ${it.message}" },
             )
             busy = false
@@ -126,6 +130,28 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
                         SmallButton("+") { state.setBudget(state.budgetPaise + 100_000) }
                     }
                 }
+            }
+        }
+
+        Card {
+            Column {
+                SectionTitle("Tracking from")
+                val since = if (state.startDay <= 0) "the beginning" else LocalDate.ofEpochDay(state.startDay).format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
+                Text(
+                    "Counting spends from $since." + if (state.hiddenCount > 0) " ${state.hiddenCount} older ones are hidden, not deleted." else "",
+                    color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
+                )
+                var confirm by remember { mutableStateOf(false) }
+                Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SmallButton(if (confirm) "Tap again to hide older" else "Start fresh from today", primary = true) {
+                        if (confirm) { state.setStartDay(LocalDate.now().toEpochDay()); confirm = false } else confirm = true
+                    }
+                    if (state.startDay > 0) SmallButton("Show older") { state.setStartDay(0) }
+                }
+                Text(
+                    "Importing old SMS skips anything before this date. Choose “Show older” first if you want your history.",
+                    color = Pal.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp),
+                )
             }
         }
 

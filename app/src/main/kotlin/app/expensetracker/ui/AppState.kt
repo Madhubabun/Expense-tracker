@@ -21,7 +21,14 @@ import java.time.LocalDate
 class AppState(private val context: Context) {
     private val db = Db.get(context)
 
+    private var allTxns = emptyList<Txn>()
+
+    /** Spends from the tracking start day onwards. Older ones stay in the database but are hidden. */
     var txns by mutableStateOf<List<Txn>>(emptyList())
+        private set
+    var startDay by mutableStateOf(Prefs.startDay(context))
+        private set
+    var hiddenCount by mutableStateOf(0)
         private set
     var categories by mutableStateOf<List<Category>>(emptyList())
         private set
@@ -35,7 +42,9 @@ class AppState(private val context: Context) {
     }
 
     fun refresh() {
-        txns = db.all()
+        allTxns = db.all()
+        txns = allTxns.filter { it.epochDay >= startDay }
+        hiddenCount = allTxns.size - txns.size
         categories = db.categories()
     }
 
@@ -66,6 +75,13 @@ class AppState(private val context: Context) {
 
     fun addManual(amountPaise: Long, type: TxnType, day: LocalDate, category: String, comment: String) {
         db.insertManual(amountPaise, type, day.toEpochDay(), category, comment, null)
+        refresh()
+    }
+
+    /** Hides everything before [epochDay]. Pass 0 to show all older transactions again. */
+    fun setStartDay(epochDay: Long) {
+        startDay = epochDay
+        Prefs.setStartDay(context, epochDay)
         refresh()
     }
 
