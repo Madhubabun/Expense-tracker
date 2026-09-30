@@ -1,4 +1,4 @@
-# Expense Tracker
+# Spendr
 
 An Android app (Kotlin, Jetpack Compose) that reads bank and UPI debit/credit SMS on your phone,
 saves the amount, and asks you for a category and comment. Everything stays on the phone.
@@ -20,7 +20,7 @@ saves the amount, and asks you for a category and comment. Everything stays on t
 
 1. Open the latest run of the **Build** workflow under the Actions tab and download `expense-tracker-debug-apk`.
 2. Unzip it and copy `app-debug.apk` to the phone, then open it to install.
-3. On Android 13+: Settings > Apps > Expense Tracker > ⋮ > **Allow restricted settings**, then grant the SMS permission.
+3. On Android 13+: Settings > Apps > Spendr > ⋮ > **Allow restricted settings**, then grant the SMS permission.
 
 ## Layout
 
