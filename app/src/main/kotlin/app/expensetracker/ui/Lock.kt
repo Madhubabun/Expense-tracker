@@ -32,24 +32,27 @@ object Lock {
 
     fun available(context: Context): Boolean =
         Build.VERSION.SDK_INT >= 30 &&
-            context.getSystemService(BiometricManager::class.java)?.canAuthenticate(AUTH) == BiometricManager.BIOMETRIC_SUCCESS
+            runCatching { context.getSystemService(BiometricManager::class.java)?.canAuthenticate(AUTH) == BiometricManager.BIOMETRIC_SUCCESS }
+                .getOrDefault(false)
 
     /** True when the lock is switched on and the phone can actually ask for it, so nobody gets locked out. */
     fun shouldLock(context: Context): Boolean = Prefs.flag(context, Prefs.APP_LOCK, false) && available(context)
 
     fun authenticate(activity: Activity, onSuccess: () -> Unit, onFail: () -> Unit = {}) {
         if (Build.VERSION.SDK_INT < 30) return onFail()
-        val prompt = BiometricPrompt.Builder(activity)
-            .setTitle("Unlock Expense Tracker")
-            .setAllowedAuthenticators(AUTH)
-            .build()
-        prompt.authenticate(
-            CancellationSignal(), activity.mainExecutor,
-            object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onSuccess()
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) = onFail()
-            },
-        )
+        runCatching {
+            BiometricPrompt.Builder(activity)
+                .setTitle("Unlock Expense Tracker")
+                .setAllowedAuthenticators(AUTH)
+                .build()
+                .authenticate(
+                    CancellationSignal(), activity.mainExecutor,
+                    object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onSuccess()
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) = onFail()
+                    },
+                )
+        }.onFailure { onFail() }
     }
 }
 
