@@ -11,9 +11,16 @@ class ReportsTest {
         ReportTxn(paise, TxnType.DEBIT, date, category, kind)
 
     @Test
-    fun weekRunsMondayToSunday() {
-        // 2026-09-30 is a Wednesday
-        assertEquals(d(2026, 9, 28) to d(2026, 10, 4), Reports.range(Period.WEEK, d(2026, 9, 30)))
+    fun weekIsTheSevenDaysEndingToday() {
+        assertEquals(d(2026, 9, 24) to d(2026, 9, 30), Reports.range(Period.WEEK, d(2026, 9, 30)))
+        assertEquals(d(2026, 9, 23), Reports.shift(Period.WEEK, d(2026, 9, 30), -1))
+    }
+
+    @Test
+    fun percentChange() {
+        assertEquals(-12, Reports.percentChange(880, 1000))
+        assertEquals(25, Reports.percentChange(125, 100))
+        assertEquals(null, Reports.percentChange(100, 0))
     }
 
     @Test
@@ -36,8 +43,9 @@ class ReportsTest {
         assertEquals(30_000, s.spentPaise)
         assertEquals(1_000_000, s.receivedPaise)
         assertEquals(listOf("Uncategorized" to 20_000L, "Food" to 10_000L), s.byCategory.map { it.category to it.spentPaise })
-        assertEquals(30, s.bars.size)
-        assertEquals(10_000, s.bars[29].spentPaise)
+        assertEquals(5, s.bars.size)
+        assertEquals("W5", s.bars[4].label)
+        assertEquals(30_000, s.bars[4].spentPaise) // 29 and 30 Sep fall in the last bucket
     }
 
     @Test

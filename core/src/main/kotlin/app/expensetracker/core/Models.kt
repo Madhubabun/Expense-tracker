@@ -16,10 +16,25 @@ object Categories {
     const val BANK_CHARGES = "Bank charges"
     const val UNCATEGORIZED = ""
 
-    val defaults = listOf(
-        "Food", "Groceries", "Transport", "Shopping", "Bills", "Entertainment",
-        "Health", "Bank charges", "Salary", "Transfer", "Other",
+    /** Categories that ship with the app. Colours are ARGB. People add their own on top of these. */
+    data class Builtin(val name: String, val emoji: String, val argb: Long)
+
+    val builtins = listOf(
+        Builtin("Food", "🍜", 0xFFFF5C7A),
+        Builtin("Groceries", "🛒", 0xFFB6FF5C),
+        Builtin("Transport", "🚕", 0xFF2EF2E0),
+        Builtin("Shopping", "🛍️", 0xFFB18CFF),
+        Builtin("Bills", "💡", 0xFFFFB938),
+        Builtin("Entertainment", "🎬", 0xFFFF4FD8),
+        Builtin("Health", "💊", 0xFF4DA3FF),
+        Builtin(BANK_CHARGES, "🏦", 0xFFB0AEC4),
+        Builtin("Salary", "💰", 0xFF5CE08A),
+        Builtin(TRANSFER, "🔁", 0xFF8F8DA2),
+        Builtin(CARD_BILL, "💳", 0xFF8F8DA2),
+        Builtin("Other", "🧾", 0xFFB0AEC4),
     )
+
+    val defaults = builtins.map { it.name }
 
     /** Categories that are left out of spending and income totals. */
     val excludedFromTotals = setOf(TRANSFER, CARD_BILL)

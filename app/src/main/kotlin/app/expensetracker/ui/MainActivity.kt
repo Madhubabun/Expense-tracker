@@ -3,6 +3,7 @@ package app.expensetracker.ui
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableLongStateOf
 import app.expensetracker.Notifier
 
@@ -12,6 +13,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         Notifier.ensureChannel(this)
         openTxnId.longValue = intent.getLongExtra(Notifier.EXTRA_TXN_ID, -1L)
         setContent {

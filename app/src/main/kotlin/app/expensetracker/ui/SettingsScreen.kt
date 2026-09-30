@@ -5,27 +5,43 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import app.expensetracker.core.Reports
+import app.expensetracker.Notifier
 import app.expensetracker.core.TxnType
 import app.expensetracker.data.SmsProcessor
 import app.expensetracker.data.Txn
@@ -35,7 +51,30 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
 @Composable
-fun SettingsScreen(state: AppState) {
+private fun SettingRow(title: String, sub: String, trailing: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Pal.fg, fontSize = 15.sp)
+            Text(sub, color = Pal.muted, fontSize = 12.sp)
+        }
+        trailing()
+    }
+}
+
+@Composable
+private fun SmallButton(text: String, primary: Boolean = false, onClick: () -> Unit) {
+    val p = Pal
+    val base = Modifier.clip(RoundedCornerShape(12.dp))
+    Text(
+        text, color = if (primary) Color.White else p.fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+        modifier = (if (primary) base.background(Brush.horizontalGradient(listOf(p.accent, p.pink))) else base.background(p.surface2).border(1.dp, p.line, RoundedCornerShape(12.dp)))
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 9.dp),
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf("") }
@@ -50,7 +89,7 @@ fun SettingsScreen(state: AppState) {
             val result = withContext(Dispatchers.IO) { runCatching { SmsProcessor.importInbox(context) } }
             state.refresh()
             status = result.fold(
-                onSuccess = { "Scanned ${it.scanned} messages and added ${it.added} transactions. Use “Needs category” on the first tab to tag them." },
+                onSuccess = { "Scanned ${it.scanned} messages and added ${it.added} transactions. Tag them from “Needs a category”." },
                 onFailure = { "Import failed: ${it.message}" },
             )
             busy = false
@@ -60,14 +99,11 @@ fun SettingsScreen(state: AppState) {
     val smsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) runImport() else status = "SMS permission was not granted, so the old messages can't be read."
     }
-
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
                 val ok = withContext(Dispatchers.IO) {
-                    runCatching {
-                        context.contentResolver.openOutputStream(uri)?.use { it.write(toCsv(state.txns).toByteArray()) }
-                    }.isSuccess
+                    runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(toCsv(state.txns).toByteArray()) } }.isSuccess
                 }
                 status = if (ok) "Saved ${state.txns.size} transactions. Upload the file to Google Drive from your Files app." else "Could not save the file."
             }
@@ -75,38 +111,75 @@ fun SettingsScreen(state: AppState) {
     }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Import old messages", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Reads your SMS inbox once and saves every bank / UPI debit and credit. Safe to run again: messages already saved are skipped.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Button(enabled = !busy, onClick = { if (smsGranted()) runImport() else smsPermission.launch(Manifest.permission.READ_SMS) }) {
-            Text("Import SMS inbox")
+        ScreenTitle("Your setup", "Settings")
+
+        Card {
+            Column {
+                SectionTitle("Monthly budget")
+                SettingRow("Budget for each month", "The ring on Today fills against this") {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SmallButton("−") { state.setBudget((state.budgetPaise - 100_000).coerceAtLeast(500_000)) }
+                        Text(rupees(state.budgetPaise).removeSuffix(".00"), color = Pal.fg, fontWeight = FontWeight.SemiBold)
+                        SmallButton("+") { state.setBudget(state.budgetPaise + 100_000) }
+                    }
+                }
+            }
         }
 
-        Text("Export", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
-        Text(
-            "Saves all transactions as a CSV file (opens in Excel or Google Sheets). Pick Google Drive as the location to back it up there.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        OutlinedButton(onClick = { exportLauncher.launch("expenses-${LocalDate.now()}.csv") }) { Text("Export CSV") }
+        Card {
+            Column {
+                SectionTitle("SMS and data")
+                SettingRow("Old messages", "Pull in your past bank SMS once") { SmallButton("Import", primary = true) { if (smsGranted()) runImport() else smsPermission.launch(Manifest.permission.READ_SMS) } }
+                SettingRow("Needs a category", "${state.needsCategory.size} spends waiting") { SmallButton("Review") { onReviewNeeds() } }
+                SettingRow("Alert preview", "Send yourself a sample notification") {
+                    SmallButton("Preview") {
+                        val t = state.needsCategory.firstOrNull() ?: state.txns.firstOrNull { it.type == TxnType.DEBIT }
+                        if (t != null) Notifier.show(context, t) else status = "Add or import a spend first."
+                    }
+                }
+                SettingRow("Back up", "CSV you can drop in Google Drive") { SmallButton("Export CSV") { exportLauncher.launch("expenses-${LocalDate.now()}.csv") } }
+                if (status.isNotEmpty()) Text(status, color = Pal.accent, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            }
+        }
 
-        if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        Card {
+            Column {
+                SectionTitle("Categories")
+                Text("Add your own with an emoji or a picture. Ones you made can be removed.", color = Pal.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    state.categories.forEach { c ->
+                        Row(
+                            Modifier.clip(CircleShape).background(Color(c.color).copy(alpha = .16f)).border(1.dp, Color(c.color).copy(alpha = .4f), CircleShape).padding(start = 6.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            CategoryTile(c, state, size = 24.dp)
+                            Text(c.name, color = Pal.fg, fontSize = 13.sp)
+                            if (!c.builtin) Text("×", color = Pal.muted, fontSize = 16.sp, modifier = Modifier.clickable { state.deleteCategory(c) })
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Box { SmallButton("＋ New category", primary = true, onClick = onNewCategory) }
+            }
+        }
 
-        Text("Privacy", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
-        Text(
-            "Everything is stored only on this phone. The app has no internet permission. Only messages that look like a bank debit or credit are saved; all other SMS are ignored.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-
-        Text("If SMS permission is greyed out", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
-        Text(
-            "Android blocks SMS access for apps installed from a file. Open Settings › Apps › Expense Tracker, tap ⋮ (top right) and choose “Allow restricted settings”. Then grant SMS under Permissions.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
+        Card {
+            Column {
+                SectionTitle("Good to know")
+                Text(
+                    "Everything stays on this phone. The app has no internet permission, and only bank debit or credit messages are saved.",
+                    color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
+                )
+                Text(
+                    "If SMS permission is greyed out: Settings › Apps › Expense Tracker, tap ⋮ (top right) and choose “Allow restricted settings”, then grant SMS under Permissions.",
+                    color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp),
+                )
+                Text("Look: follows your phone's light or dark setting.", color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp))
+            }
+        }
     }
 }
 
@@ -116,7 +189,7 @@ private fun toCsv(txns: List<Txn>): String {
     txns.forEach { t ->
         sb.append(LocalDate.ofEpochDay(t.epochDay)).append(',')
             .append(if (t.type == TxnType.DEBIT) "debit" else "credit").append(',')
-            .append(Reports.formatRupees(t.amountPaise).replace(",", "")).append(',')
+            .append(app.expensetracker.core.Reports.formatRupees(t.amountPaise).replace(",", "")).append(',')
             .append(q(t.category)).append(',').append(q(t.comment)).append(',')
             .append(q(t.merchant)).append(',').append(q(t.bank)).append(',')
             .append(q(t.account)).append(',').append(q(t.ref)).append(',').append(q(t.source)).append('\n')

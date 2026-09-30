@@ -17,7 +17,7 @@ object SmsProcessor {
         val db = Db.get(context)
         val day = Instant.ofEpochMilli(receivedMillis).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
         // Same SMS seen live and again during import lands on the same key (body + minute).
-        val id = db.insertParsed(parsed, day, "sms", body + "|" + receivedMillis / 60_000)
+        val id = db.insertParsed(parsed, day, receivedMillis, "sms", body + "|" + receivedMillis / 60_000)
         if (id > 0 && notify) db.get(id)?.let { Notifier.show(context, it) }
         return id
     }

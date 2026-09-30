@@ -1,6 +1,5 @@
 package app.expensetracker.core
 
-import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.time.temporal.TemporalAdjusters
@@ -30,7 +29,7 @@ data class Summary(
     val end: LocalDate,
     val spentPaise: Long,
     val receivedPaise: Long,
-    /** Spending per day (week and month) or per month (year). */
+    /** Spending per day (week), per week of the month (month) or per month (year). */
     val bars: List<Bar>,
     /** Spending per category, largest first. Uncategorized spending shows up as "Uncategorized". */
     val byCategory: List<CategoryTotal>,
@@ -40,16 +39,23 @@ data class Summary(
 object Reports {
     const val UNCATEGORIZED_LABEL = "Uncategorized"
 
-    /** First and last day (inclusive) of the week (Monday to Sunday), month or year holding [anchor]. */
+    /**
+     * First and last day (inclusive) of the period holding [anchor].
+     * WEEK is the 7 days ending on [anchor], so this week is always comparable with last week.
+     */
     fun range(period: Period, anchor: LocalDate): Pair<LocalDate, LocalDate> = when (period) {
-        Period.WEEK -> anchor.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).let { it to it.plusDays(6) }
+        Period.WEEK -> anchor.minusDays(6) to anchor
         Period.MONTH -> anchor.withDayOfMonth(1).let { it to it.with(TemporalAdjusters.lastDayOfMonth()) }
         Period.YEAR -> LocalDate.of(anchor.year, 1, 1) to LocalDate.of(anchor.year, 12, 31)
     }
 
+    /** Change from [previous] to [current] in whole percent, or null when there is nothing to compare with. */
+    fun percentChange(current: Long, previous: Long): Int? =
+        if (previous <= 0) null else Math.round((current - previous) * 100.0 / previous).toInt()
+
     /** Moves [anchor] by [steps] periods (negative goes back). */
     fun shift(period: Period, anchor: LocalDate, steps: Long): LocalDate = when (period) {
-        Period.WEEK -> anchor.plusWeeks(steps)
+        Period.WEEK -> anchor.plusDays(steps * 7)
         Period.MONTH -> anchor.plusMonths(steps)
         Period.YEAR -> anchor.plusYears(steps)
     }
@@ -64,8 +70,9 @@ object Reports {
                 val d = start.plusDays(i.toLong())
                 Bar(d.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH), debits.filter { it.date == d }.sumOf { it.amountPaise })
             }
-            Period.MONTH -> (1..end.dayOfMonth).map { day ->
-                Bar(day.toString(), debits.filter { it.date.dayOfMonth == day }.sumOf { it.amountPaise })
+            // Weekly buckets: days 1-7, 8-14, 15-21, 22-28 and 29 to the end of the month.
+            Period.MONTH -> (0..4).map { w ->
+                Bar("W${w + 1}", debits.filter { (it.date.dayOfMonth - 1) / 7 == w }.sumOf { it.amountPaise })
             }
             Period.YEAR -> (1..12).map { m ->
                 Bar(
