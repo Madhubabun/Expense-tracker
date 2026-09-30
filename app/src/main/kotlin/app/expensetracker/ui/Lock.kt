@@ -42,7 +42,7 @@ object Lock {
         if (Build.VERSION.SDK_INT < 30) return onFail()
         runCatching {
             BiometricPrompt.Builder(activity)
-                .setTitle("Unlock Expense Tracker")
+                .setTitle("Unlock Spendr")
                 .setAllowedAuthenticators(AUTH)
                 .build()
                 .authenticate(
@@ -65,7 +65,7 @@ fun LockScreen(onUnlock: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("🔒", fontSize = 56.sp)
-        Text("Expense Tracker is locked", color = Pal.fg, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+        Text("Spendr is locked", color = Pal.fg, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
         Text(
             "Unlock",
             color = Color.White, fontWeight = FontWeight.Bold,

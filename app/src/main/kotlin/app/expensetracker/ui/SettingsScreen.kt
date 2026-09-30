@@ -206,7 +206,7 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
                     color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
                 )
                 Text(
-                    "If SMS permission is greyed out: Settings › Apps › Expense Tracker, tap ⋮ (top right) and choose “Allow restricted settings”, then grant SMS under Permissions.",
+                    "If SMS permission is greyed out: Settings › Apps › Spendr, tap ⋮ (top right) and choose “Allow restricted settings”, then grant SMS under Permissions.",
                     color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp),
                 )
                 Text("Look: follows your phone's light or dark setting.", color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp))
