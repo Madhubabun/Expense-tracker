@@ -79,7 +79,7 @@ class AppState(private val context: Context) {
     }
 
     /** Hides everything before [epochDay]. Pass 0 to show all older transactions again. */
-    fun setStartDay(epochDay: Long) {
+    fun changeStartDay(epochDay: Long) {
         startDay = epochDay
         Prefs.setStartDay(context, epochDay)
         refresh()

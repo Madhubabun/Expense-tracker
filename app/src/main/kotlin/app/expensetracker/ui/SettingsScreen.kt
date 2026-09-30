@@ -144,9 +144,9 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
                 var confirm by remember { mutableStateOf(false) }
                 Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SmallButton(if (confirm) "Tap again to hide older" else "Start fresh from today", primary = true) {
-                        if (confirm) { state.setStartDay(LocalDate.now().toEpochDay()); confirm = false } else confirm = true
+                        if (confirm) { state.changeStartDay(LocalDate.now().toEpochDay()); confirm = false } else confirm = true
                     }
-                    if (state.startDay > 0) SmallButton("Show older") { state.setStartDay(0) }
+                    if (state.startDay > 0) SmallButton("Show older") { state.changeStartDay(0) }
                 }
                 Text(
                     "Importing old SMS skips anything before this date. Choose “Show older” first if you want your history.",
