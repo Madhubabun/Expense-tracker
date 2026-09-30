@@ -16,6 +16,17 @@ android {
         versionName = "0.1.0"
     }
 
+    // Every CI run used to create its own throwaway debug key, so each build had a different signature and
+    // Android refused to install one over another ("App not installed"). One fixed key keeps them compatible.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
