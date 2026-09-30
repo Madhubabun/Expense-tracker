@@ -36,7 +36,7 @@ data class Category(val name: String, val emoji: String, val color: Long, val im
 
 /** All data lives in this one SQLite file on the phone. Nothing is sent anywhere. */
 class Db private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 2) {
+    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 3) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -62,6 +62,7 @@ class Db private constructor(context: Context) :
         // Remembers the category you picked for a merchant, so the next payment there is tagged automatically.
         db.execSQL("CREATE TABLE merchant_category (merchant TEXT PRIMARY KEY, category TEXT NOT NULL)")
         createCategories(db)
+        createCategoryBudgets(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -69,7 +70,30 @@ class Db private constructor(context: Context) :
             db.execSQL("ALTER TABLE txn ADD COLUMN at_ms INTEGER NOT NULL DEFAULT 0")
             createCategories(db)
         }
+        if (oldVersion < 3) createCategoryBudgets(db)
     }
+
+    private fun createCategoryBudgets(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE category_budget (category TEXT PRIMARY KEY, paise INTEGER NOT NULL)")
+    }
+
+    /** Monthly limit per category, in paise. */
+    fun categoryBudgets(): Map<String, Long> =
+        readableDatabase.rawQuery("SELECT category, paise FROM category_budget", null).use { c ->
+            buildMap { while (c.moveToNext()) put(c.getString(0), c.getLong(1)) }
+        }
+
+    /** A limit of 0 or less removes the budget. */
+    fun setCategoryBudget(category: String, paise: Long) {
+        if (paise <= 0) {
+            writableDatabase.delete("category_budget", "category = ?", arrayOf(category))
+        } else {
+            writableDatabase.execSQL("INSERT OR REPLACE INTO category_budget(category, paise) VALUES (?, ?)", arrayOf(category, paise))
+        }
+    }
+
+    /** Raw access for backup and restore. */
+    internal fun database(): SQLiteDatabase = writableDatabase
 
     private fun createCategories(db: SQLiteDatabase) {
         db.execSQL(

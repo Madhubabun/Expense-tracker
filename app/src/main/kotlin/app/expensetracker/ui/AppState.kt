@@ -35,6 +35,10 @@ class AppState(private val context: Context) {
     var budgetPaise by mutableStateOf(Prefs.budgetPaise(context))
         private set
 
+    /** Monthly limit per category, in paise. */
+    var categoryBudgets by mutableStateOf<Map<String, Long>>(emptyMap())
+        private set
+
     private val images = HashMap<String, Bitmap?>()
 
     init {
@@ -46,7 +50,25 @@ class AppState(private val context: Context) {
         txns = allTxns.filter { it.epochDay >= startDay }
         hiddenCount = allTxns.size - txns.size
         categories = db.categories()
+        categoryBudgets = db.categoryBudgets()
+        runCatching { app.expensetracker.TodayWidget.refresh(context) }
     }
+
+    /** Call after a restore: everything on disk changed underneath us. */
+    fun reloadAll() {
+        images.clear()
+        startDay = Prefs.startDay(context)
+        budgetPaise = Prefs.budgetPaise(context)
+        refresh()
+    }
+
+    fun setCategoryBudget(category: String, paise: Long) {
+        db.setCategoryBudget(category, paise)
+        categoryBudgets = db.categoryBudgets()
+    }
+
+    /** Monthly bills spotted from all history, hidden spends included. Soonest first. */
+    fun bills() = app.expensetracker.Alerts.detectBills(context, LocalDate.now().toEpochDay()).sortedBy { it.nextDay }
 
     fun category(name: String): Category? = categories.firstOrNull { it.name == name }
 
@@ -66,6 +88,7 @@ class AppState(private val context: Context) {
     fun save(id: Long, category: String, comment: String) {
         db.setCategoryAndComment(id, category, comment)
         refresh()
+        runCatching { app.expensetracker.Alerts.checkBudgets(context) }
     }
 
     fun delete(id: Long) {
@@ -76,6 +99,7 @@ class AppState(private val context: Context) {
     fun addManual(amountPaise: Long, type: TxnType, day: LocalDate, category: String, comment: String) {
         db.insertManual(amountPaise, type, day.toEpochDay(), category, comment, null)
         refresh()
+        runCatching { app.expensetracker.Alerts.checkBudgets(context) }
     }
 
     /** Hides everything before [epochDay]. Pass 0 to show all older transactions again. */

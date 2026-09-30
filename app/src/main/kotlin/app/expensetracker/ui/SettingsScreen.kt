@@ -51,7 +51,7 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
 @Composable
-private fun SettingRow(title: String, sub: String, trailing: @Composable () -> Unit) {
+internal fun SettingRow(title: String, sub: String, trailing: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f)) {
             Text(title, color = Pal.fg, fontSize = 15.sp)
@@ -62,7 +62,7 @@ private fun SettingRow(title: String, sub: String, trailing: @Composable () -> U
 }
 
 @Composable
-private fun SmallButton(text: String, primary: Boolean = false, onClick: () -> Unit) {
+internal fun SmallButton(text: String, primary: Boolean = false, onClick: () -> Unit) {
     val p = Pal
     val base = Modifier.clip(RoundedCornerShape(12.dp))
     Text(
@@ -133,6 +133,10 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
             }
         }
 
+        BudgetsCard(state)
+        AlertsCard()
+        SecurityCard()
+
         Card {
             Column {
                 SectionTitle("Tracking from")
@@ -166,10 +170,12 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
                         if (t != null) Notifier.show(context, t) else status = "Add or import a spend first."
                     }
                 }
-                SettingRow("Back up", "CSV you can drop in Google Drive") { SmallButton("Export CSV") { exportLauncher.launch("expenses-${LocalDate.now()}.csv") } }
+                SettingRow("Spreadsheet", "CSV of your spends") { SmallButton("Export CSV") { exportLauncher.launch("expenses-${LocalDate.now()}.csv") } }
                 if (status.isNotEmpty()) Text(status, color = Pal.accent, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
             }
         }
+
+        BackupCard(state)
 
         Card {
             Column {

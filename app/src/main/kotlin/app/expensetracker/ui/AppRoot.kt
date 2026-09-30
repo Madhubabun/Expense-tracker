@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -48,6 +49,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
     var editing by remember { mutableStateOf<Txn?>(null) }
     var adding by remember { mutableStateOf(false) }
     var newCategory by remember { mutableStateOf(false) }
+    var searching by remember { mutableStateOf(false) }
 
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
@@ -101,6 +103,11 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
                 )
             }
             if (tab != Tab.SETTINGS) {
+                Box(
+                    Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 80.dp).size(48.dp).clip(CircleShape)
+                        .background(Pal.surface2).clickable { searching = true },
+                    contentAlignment = Alignment.Center,
+                ) { Text("🔍", fontSize = 20.sp) }
                 Row(
                     Modifier.align(Alignment.BottomEnd).padding(16.dp).clip(CircleShape)
                         .background(Brush.horizontalGradient(listOf(Pal.accent, Pal.pink)))
@@ -113,6 +120,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
         }
     }
 
+    if (searching) SearchScreen(state, onEdit = { editing = it }, onClose = { searching = false })
     editing?.let { txn ->
         EditTxnSheet(
             state, txn,

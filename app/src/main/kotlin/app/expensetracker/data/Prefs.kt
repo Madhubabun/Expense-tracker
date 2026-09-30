@@ -24,6 +24,26 @@ object Prefs {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putLong(START_DAY, epochDay).apply()
     }
 
+    const val BUDGET_ALERTS = "budget_alerts"
+    const val NIGHTLY_SUMMARY = "nightly_summary"
+    const val BILL_REMINDERS = "bill_reminders"
+    const val APP_LOCK = "app_lock"
+
+    fun flag(context: Context, key: String, default: Boolean): Boolean =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(key, default)
+
+    fun setFlag(context: Context, key: String, value: Boolean) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, value).apply()
+    }
+
+    /** Last budget warning sent for [key] (for example "overall-202609"): 0, 80 or 100. Stops repeat alerts. */
+    fun alertLevel(context: Context, key: String): Int =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getInt("alert-$key", 0)
+
+    fun setAlertLevel(context: Context, key: String, level: Int) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putInt("alert-$key", level).apply()
+    }
+
     fun budgetPaise(context: Context): Long =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getLong(BUDGET, DEFAULT_BUDGET_PAISE)
 

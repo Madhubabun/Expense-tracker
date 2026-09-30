@@ -131,6 +131,8 @@ fun PeriodScreen(state: AppState, period: Period, onEdit: (Txn) -> Unit) {
             CategoryPills(state, summary.byCategory)
         }
 
+        if (period == Period.MONTH && offset == 0) MonthExtras(state, summary.byCategory, today)
+
         SectionTitle(if (period == Period.YEAR) "By month" else "Day by day")
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (period == Period.YEAR) {

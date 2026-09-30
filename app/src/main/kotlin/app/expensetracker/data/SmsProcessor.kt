@@ -2,7 +2,9 @@ package app.expensetracker.data
 
 import android.content.Context
 import android.net.Uri
+import app.expensetracker.Alerts
 import app.expensetracker.Notifier
+import app.expensetracker.TodayWidget
 import app.expensetracker.core.SmsParser
 import java.time.Instant
 import java.time.ZoneId
@@ -25,7 +27,11 @@ object SmsProcessor {
         // Same SMS seen live and again during import lands on the same key (body + minute).
         if ((parsed.epochDay ?: day) < Prefs.startDay(context)) return SKIPPED_OLD
         val id = db.insertParsed(parsed, day, receivedMillis, "sms", body + "|" + receivedMillis / 60_000)
-        if (id > 0 && notify) db.get(id)?.let { Notifier.show(context, it) }
+        if (id > 0 && notify) {
+            db.get(id)?.let { Notifier.show(context, it) }
+            runCatching { Alerts.checkBudgets(context) }
+            runCatching { TodayWidget.refresh(context) }
+        }
         return id
     }
 
