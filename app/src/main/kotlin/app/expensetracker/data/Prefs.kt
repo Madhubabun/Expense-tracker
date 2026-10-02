@@ -50,4 +50,21 @@ object Prefs {
     fun setBudgetPaise(context: Context, paise: Long) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putLong(BUDGET, paise).apply()
     }
+
+    /** Exchange rates you typed in, as rupees per one unit of each currency, for example USD to 83.5. */
+    fun rates(context: Context): Map<String, Double> =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString("rates", "").orEmpty()
+            .split(',').mapNotNull { part ->
+                val bits = part.split(':')
+                val rate = bits.getOrNull(1)?.toDoubleOrNull()
+                if (bits.size == 2 && bits[0].isNotBlank() && rate != null && rate > 0) bits[0] to rate else null
+            }.toMap()
+
+    /** A rate of 0 or less removes the currency. */
+    fun setRate(context: Context, code: String, rate: Double) {
+        val map = rates(context).toMutableMap()
+        if (rate > 0) map[code.uppercase()] = rate else map.remove(code.uppercase())
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString("rates", map.entries.joinToString(",") { "${it.key}:${it.value}" }).apply()
+    }
 }

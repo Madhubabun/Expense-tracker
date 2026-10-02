@@ -32,6 +32,10 @@ data class Txn(
     val tags: String = "",
     /** File name of an attached receipt photo, if any. */
     val receipt: String? = null,
+    /** Currency it was spent in; INR unless you entered a foreign amount. */
+    val currency: String = "INR",
+    /** Amount in [currency] (in its smallest unit) when it is not INR, else 0. */
+    val origPaise: Long = 0,
 )
 
 enum class AccountKind(val label: String, val emoji: String) {
@@ -56,7 +60,7 @@ data class Category(val name: String, val emoji: String, val color: Long, val im
 
 /** All data lives in this one SQLite file on the phone. Nothing is sent anywhere. */
 class Db private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 5) {
+    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 6) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -77,6 +81,8 @@ class Db private constructor(context: Context) :
                 account_id INTEGER NOT NULL DEFAULT 0,
                 tags TEXT NOT NULL DEFAULT '',
                 receipt TEXT,
+                currency TEXT NOT NULL DEFAULT 'INR',
+                orig_paise INTEGER NOT NULL DEFAULT 0,
                 dedup TEXT UNIQUE,
                 created_at INTEGER NOT NULL
             )""",
@@ -114,6 +120,10 @@ class Db private constructor(context: Context) :
             }
         }
         if (oldVersion < 5) upgradeToV5(db)
+        if (oldVersion < 6) {
+            db.execSQL("ALTER TABLE txn ADD COLUMN currency TEXT NOT NULL DEFAULT 'INR'")
+            db.execSQL("ALTER TABLE txn ADD COLUMN orig_paise INTEGER NOT NULL DEFAULT 0")
+        }
     }
 
     private fun upgradeToV5(db: SQLiteDatabase) {
@@ -206,6 +216,33 @@ class Db private constructor(context: Context) :
         if (id == cashAccountId()) return
         writableDatabase.execSQL("UPDATE txn SET account_id = 0 WHERE account_id = ?", arrayOf(id))
         writableDatabase.delete("account", "id = ?", arrayOf(id.toString()))
+    }
+
+    /**
+     * Carves [paise] out of a spend into a new spend in [category] (same day, wallet, tags and note).
+     * Returns false if the amount is not between zero and the spend's amount.
+     */
+    @Synchronized
+    fun splitOff(id: Long, paise: Long, category: String): Boolean {
+        val t = get(id) ?: return false
+        if (paise <= 0 || paise >= t.amountPaise) return false
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.execSQL("UPDATE txn SET amount_paise = amount_paise - ?, currency = 'INR', orig_paise = 0 WHERE id = ?", arrayOf(paise, id))
+            val v = ContentValues().apply {
+                put("amount_paise", paise); put("type", t.type.name); put("kind", t.kind.name)
+                put("merchant", t.merchant); put("bank", t.bank); put("account", t.account)
+                put("epoch_day", t.epochDay); put("at_ms", t.atMillis)
+                put("category", category); put("comment", t.comment); put("source", "split")
+                put("account_id", t.accountId); put("tags", t.tags); put("created_at", System.currentTimeMillis())
+            }
+            db.insert("txn", null, v)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        return true
     }
 
     fun setTags(txnId: Long, tags: String) {
@@ -334,6 +371,8 @@ class Db private constructor(context: Context) :
         merchant: String?,
         accountId: Long = cashAccountId(),
         tags: String = "",
+        currency: String = "INR",
+        origPaise: Long = 0,
     ): Long {
         val values = ContentValues().apply {
             put("amount_paise", amountPaise)
@@ -348,6 +387,8 @@ class Db private constructor(context: Context) :
             put("source", "manual")
             put("account_id", accountId)
             put("tags", tags)
+            put("currency", currency)
+            put("orig_paise", origPaise)
             put("created_at", System.currentTimeMillis())
         }
         return writableDatabase.insert("txn", null, values)
@@ -424,6 +465,8 @@ class Db private constructor(context: Context) :
         accountId = getLong(getColumnIndexOrThrow("account_id")),
         tags = getString(getColumnIndexOrThrow("tags")),
         receipt = getString(getColumnIndexOrThrow("receipt")),
+        currency = getString(getColumnIndexOrThrow("currency")),
+        origPaise = getLong(getColumnIndexOrThrow("orig_paise")),
     )
 
     private fun sha256(s: String): String =

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
@@ -125,6 +126,8 @@ fun PeriodScreen(state: AppState, period: Period, onEdit: (Txn) -> Unit) {
             }
         }
 
+        IncomeVsSpending(summary.spentPaise, summary.receivedPaise)
+
         if (period == Period.MONTH) {
             ViewToggle(calendar) { calendar = it }
             if (calendar) {
@@ -183,4 +186,32 @@ private fun StepButton(label: String, enabled: Boolean = true, onClick: () -> Un
         Modifier.size(38.dp).clip(CircleShape).background(Pal.surface2).clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Text(label, color = if (enabled) Pal.fg else Pal.muted.copy(alpha = .4f), fontSize = 20.sp) }
+}
+
+/** Two bars: what came in against what went out, and what is left. */
+@Composable
+private fun IncomeVsSpending(spent: Long, received: Long) {
+    if (spent == 0L && received == 0L) return
+    val top = maxOf(spent, received).coerceAtLeast(1).toFloat()
+    val net = received - spent
+    Card {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth()) {
+                Text("Income vs spending", color = Pal.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(
+                    (if (net >= 0) "Saved " else "Over by ") + rupees(Math.abs(net)).removeSuffix(".00"),
+                    color = if (net >= 0) Pal.good else Pal.bad, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                )
+            }
+            listOf(Triple("In", received, Pal.good), Triple("Out", spent, Pal.bad)).forEach { (label, v, tint) ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(label, color = Pal.muted, fontSize = 12.sp, modifier = Modifier.width(26.dp))
+                    Box(Modifier.weight(1f).height(10.dp).clip(CircleShape).background(Pal.surface2)) {
+                        Box(Modifier.fillMaxWidth((v / top).coerceIn(0f, 1f)).height(10.dp).clip(CircleShape).background(tint))
+                    }
+                    Text(rupees(v).removeSuffix(".00"), color = Pal.fg, fontSize = 12.sp)
+                }
+            }
+        }
+    }
 }

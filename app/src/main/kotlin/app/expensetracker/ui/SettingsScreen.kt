@@ -134,6 +134,8 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
         }
 
         BudgetsCard(state)
+        ReportsCard(state)
+        CurrenciesCard(state)
         AlertsCard()
         SecurityCard()
 

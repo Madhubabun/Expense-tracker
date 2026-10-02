@@ -14,6 +14,7 @@ import app.expensetracker.TodayWidget
 class MainActivity : ComponentActivity() {
     /** Set when the user taps a transaction notification; the app opens that transaction's editor. */
     private val openTxnId = mutableLongStateOf(-1L)
+    private val openAdd = mutableStateOf(false)
     private val locked = mutableStateOf(false)
     private var stoppedAt = 0L
 
@@ -24,6 +25,7 @@ class MainActivity : ComponentActivity() {
         Reminders.schedule(this)
         locked.value = Lock.shouldLock(this)
         openTxnId.longValue = intent.getLongExtra(Notifier.EXTRA_TXN_ID, -1L)
+        openAdd.value = intent.getBooleanExtra(EXTRA_ADD, false)
         setContent {
             AppTheme {
                 if (locked.value) {
@@ -32,6 +34,8 @@ class MainActivity : ComponentActivity() {
                     AppRoot(
                         openTxnId = openTxnId.longValue,
                         onOpenTxnHandled = { openTxnId.longValue = -1L },
+                        openAdd = openAdd.value,
+                        onOpenAddHandled = { openAdd.value = false },
                     )
                 }
             }
@@ -54,5 +58,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         openTxnId.longValue = intent.getLongExtra(Notifier.EXTRA_TXN_ID, -1L)
+        if (intent.getBooleanExtra(EXTRA_ADD, false)) openAdd.value = true
+    }
+
+    companion object {
+        /** Set by the widget's "Add expense" button to open the add sheet straight away. */
+        const val EXTRA_ADD = "open_add"
     }
 }

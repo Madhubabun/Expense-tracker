@@ -46,7 +46,7 @@ private enum class Tab(val label: String, val icon: String) {
 }
 
 @Composable
-fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
+fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = false, onOpenAddHandled: () -> Unit = {}) {
     val context = LocalContext.current
     val state = remember { AppState(context) }
     var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
@@ -55,6 +55,13 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
     var newCategory by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
+    var voice by remember { mutableStateOf<app.expensetracker.core.VoiceEntry?>(null) }
+    var micNote by remember { mutableStateOf("") }
+    val speak = rememberSpeech(onFailed = { micNote = "Couldn't hear that. Try again." }) { said ->
+        micNote = ""
+        voice = app.expensetracker.core.VoiceParser.parse(said)
+        adding = true
+    }
 
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
@@ -80,6 +87,10 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
     val glow = if (Pal.dark) .30f else .16f
     val glowAccent = Pal.accent
     val glowPink = Pal.pink
+    LaunchedEffect(openAdd) {
+        if (openAdd) { adding = true; onOpenAddHandled() }
+    }
+
     Scaffold(
         modifier = Modifier.background(Pal.bg).drawBehind {
             drawCircle(
@@ -128,6 +139,12 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
                         .background(Pal.surface2).clickable { searching = true },
                     contentAlignment = Alignment.Center,
                 ) { Text("🔍", fontSize = 20.sp) }
+                Box(
+                    Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 136.dp).size(48.dp).clip(CircleShape)
+                        .background(Pal.surface2).clickable { speak() },
+                    contentAlignment = Alignment.Center,
+                ) { Text("🎤", fontSize = 20.sp) }
+                if (micNote.isNotEmpty()) Text(micNote, color = Pal.muted, fontSize = 12.sp, modifier = Modifier.align(Alignment.BottomStart).padding(16.dp).padding(bottom = 64.dp))
                 Row(
                     Modifier.align(Alignment.BottomEnd).padding(16.dp).clip(CircleShape)
                         .background(Brush.horizontalGradient(listOf(Pal.accent, Pal.pink)))
@@ -160,14 +177,16 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
             state, txn,
             onSave = { category, comment, accountId, tags -> state.save(txn.id, category, comment, accountId, tags); editing = null },
             onDelete = { state.delete(txn.id); editing = null },
+            onSplit = { paise, category -> state.splitOff(txn, paise, category).also { if (it) editing = null } },
             onDismiss = { editing = null },
         )
     }
     if (adding) {
         AddSpendSheet(
             state,
-            onAdd = { amount, type, day, category, note, accountId, tags -> state.addManual(amount, type, day, category, note, accountId, tags); adding = false },
-            onDismiss = { adding = false },
+            onAdd = { n -> state.addManual(n.amountPaise, n.type, n.day, n.category, n.note, n.accountId, n.tags, n.currency, n.origPaise); adding = false; voice = null },
+            initial = voice,
+            onDismiss = { adding = false; voice = null },
         )
     }
     if (newCategory) NewCategorySheet(state) { newCategory = false }

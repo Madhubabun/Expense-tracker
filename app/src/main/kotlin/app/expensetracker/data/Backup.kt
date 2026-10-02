@@ -21,6 +21,7 @@ object Backup {
         val db = Db.get(context).database()
         val root = JSONObject().put("version", VERSION).put("exportedAt", System.currentTimeMillis())
         root.put("budgetPaise", Prefs.budgetPaise(context)).put("startDay", Prefs.startDay(context))
+        root.put("rates", Prefs.rates(context).entries.joinToString(",") { "${it.key}:${it.value}" })
         TABLES.forEach { table ->
             val rows = dump(db, table)
             if (table == "category") {
@@ -80,6 +81,12 @@ object Backup {
         }
         Prefs.setBudgetPaise(context, root.optLong("budgetPaise", Prefs.DEFAULT_BUDGET_PAISE))
         Prefs.setStartDay(context, root.optLong("startDay", 0L))
+        Prefs.rates(context).keys.forEach { Prefs.setRate(context, it, 0.0) }
+        root.optString("rates", "").split(',').forEach { part ->
+            val bits = part.split(':')
+            val rate = bits.getOrNull(1)?.toDoubleOrNull()
+            if (bits.size == 2 && rate != null) Prefs.setRate(context, bits[0], rate)
+        }
         root.optJSONArray("txn")?.length() ?: 0
     }
 

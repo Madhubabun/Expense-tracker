@@ -49,6 +49,10 @@ class AppState(private val context: Context) {
     var accounts by mutableStateOf<List<Account>>(emptyList())
         private set
 
+    /** Rupees per one unit of each foreign currency you set up. */
+    var rates by mutableStateOf(Prefs.rates(context))
+        private set
+
     var goals by mutableStateOf<List<Goal>>(emptyList())
         private set
     var loans by mutableStateOf<List<Loan>>(emptyList())
@@ -121,8 +125,8 @@ class AppState(private val context: Context) {
         refresh()
     }
 
-    fun addManual(amountPaise: Long, type: TxnType, day: LocalDate, category: String, comment: String, accountId: Long = db.cashAccountId(), tags: String = "") {
-        db.insertManual(amountPaise, type, day.toEpochDay(), category, comment, null, accountId, tags)
+    fun addManual(amountPaise: Long, type: TxnType, day: LocalDate, category: String, comment: String, accountId: Long = db.cashAccountId(), tags: String = "", currency: String = "INR", origPaise: Long = 0) {
+        db.insertManual(amountPaise, type, day.toEpochDay(), category, comment, null, accountId, tags, currency, origPaise)
         refresh()
         runCatching { app.expensetracker.Alerts.checkBudgets(context) }
     }
@@ -224,4 +228,18 @@ class AppState(private val context: Context) {
     }
 
     fun deleteRepeat(r: Repeat) { Plans.deleteRepeat(context, r.id); refresh() }
+
+    fun setRate(code: String, rate: Double) {
+        Prefs.setRate(context, code.trim().uppercase(), rate)
+        rates = Prefs.rates(context)
+    }
+
+    /** Moves [paise] of a spend into a new spend in [category]. */
+    fun splitOff(t: Txn, paise: Long, category: String): Boolean {
+        val ok = db.splitOff(t.id, paise, category)
+        refresh()
+        return ok
+    }
+
+    fun accountName(id: Long): String = account(id)?.name ?: ""
 }

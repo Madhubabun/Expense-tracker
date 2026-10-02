@@ -10,6 +10,7 @@ object Categorizer {
         "Food" to listOf(
             "swiggy", "zomato", "kitchen", "restaurant", "cafe", "bakery", "hotel", "dominos", "pizza",
             "burger", "icecream", "ice cream", "biryani", "tiffin", "mess", "juice", "tea", "coffee", "sweets",
+            "chai", "lunch", "dinner", "breakfast", "snack", "snacks",
         ),
         "Groceries" to listOf(
             "bigbasket", "blinkit", "zepto", "instamart", "dmart", "supermarket", "grocery", "kirana",

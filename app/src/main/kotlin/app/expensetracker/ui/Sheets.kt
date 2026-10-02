@@ -52,6 +52,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.expensetracker.core.TxnType
+import app.expensetracker.core.VoiceEntry
+import app.expensetracker.core.VoiceParser
 import app.expensetracker.data.Account
 import app.expensetracker.data.AccountKind
 import app.expensetracker.data.Category
@@ -119,6 +121,12 @@ internal fun CategoryPicker(state: AppState, selected: String, onSelect: (String
     }
 }
 
+/** Everything the add-spend sheet collects. [origPaise] is the foreign amount when [currency] is not INR. */
+data class NewSpend(
+    val amountPaise: Long, val type: TxnType, val day: LocalDate, val category: String, val note: String,
+    val accountId: Long, val tags: String, val currency: String, val origPaise: Long,
+)
+
 /** Comma separated tags with one-tap suggestions from tags you already used. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -158,7 +166,7 @@ internal fun AccountPicker(state: AppState, selected: Long, onSelect: (Long) -> 
 }
 
 @Composable
-fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: String, accountId: Long, tags: String) -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
+fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: String, accountId: Long, tags: String) -> Unit, onDelete: () -> Unit, onSplit: (Long, String) -> Boolean, onDismiss: () -> Unit) {
     var category by remember(txn.id) { mutableStateOf(txn.category) }
     var comment by remember(txn.id) { mutableStateOf(txn.comment) }
     var accountId by remember(txn.id) { mutableStateOf(txn.accountId) }
@@ -173,6 +181,7 @@ fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: 
     AppSheet(onDismiss) {
         Text("$sign ${rupees(txn.amountPaise)}", color = Pal.fg, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Text(txn.merchant ?: txn.bank ?: "Bank SMS", color = Pal.muted)
+        if (txn.currency != "INR") Text("Entered as ${txn.currency} ${BigDecimal(txn.origPaise).movePointLeft(2).toPlainString()}", color = Pal.muted, fontSize = 12.sp)
         CategoryPicker(state, category, { category = it }, { creating = true })
         OutlinedTextField(comment, { comment = it }, label = { Text("Comment") }, modifier = Modifier.fillMaxWidth())
         AccountPicker(state, accountId) { accountId = it }
@@ -188,6 +197,7 @@ fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: 
             if (shot != null) TextButton(onClick = { receipt = state.setReceipt(txn.copy(receipt = receipt), null) }) { Text("Remove", color = Pal.bad) }
         }
         GradientButton("Save") { onSave(category.trim(), comment.trim(), accountId, cleanTags(tags)) }
+        if (txn.amountPaise > 100) SplitBox(state, txn, onSplit)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = onDelete) { Text("Delete", color = Pal.bad) }
             TextButton(onClick = onDismiss) { Text("Cancel", color = Pal.muted) }
@@ -196,18 +206,31 @@ fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: 
     if (creating) NewCategorySheet(state, onDone = { name -> if (name != null) category = name; creating = false })
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AddSpendSheet(state: AppState, onAdd: (Long, TxnType, LocalDate, String, String, Long, String) -> Unit, onDismiss: () -> Unit) {
-    var amount by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf(TxnType.DEBIT) }
+fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntry? = null, onDismiss: () -> Unit) {
+    var amount by remember { mutableStateOf(initial?.amountPaise?.let { BigDecimal(it).movePointLeft(2).stripTrailingZeros().toPlainString() } ?: "") }
+    var type by remember { mutableStateOf(initial?.type ?: TxnType.DEBIT) }
+    var currency by remember { mutableStateOf("INR") }
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
-    var category by remember { mutableStateOf("Food") }
-    var note by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf(initial?.category ?: "Food") }
+    var note by remember { mutableStateOf(initial?.note ?: "") }
+    var heard by remember { mutableStateOf("") }
+    val speak = rememberSpeech(onFailed = { heard = "Didn't catch that. Try again, or type it." }) { said ->
+        val e = VoiceParser.parse(said)
+        e.amountPaise?.let { amount = BigDecimal(it).movePointLeft(2).stripTrailingZeros().toPlainString() }
+        type = e.type
+        if (e.note.isNotEmpty()) note = e.note
+        e.category?.takeIf { c -> state.pickable.any { it.name == c } }?.let { category = it }
+        heard = "Heard: “$said”"
+    }
     var accountId by remember { mutableStateOf(state.cashId) }
     var tags by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
 
-    val paise = runCatching { BigDecimal(amount.replace(",", "")).movePointRight(2).toLong() }.getOrNull()
+    val typed = runCatching { BigDecimal(amount.replace(",", "")).movePointRight(2).toLong() }.getOrNull()
+    val rate = if (currency == "INR") 1.0 else state.rates[currency]
+    val paise = if (typed == null || rate == null) null else Math.round(typed * rate)
     val day = runCatching { LocalDate.parse(date.trim()) }.getOrNull()
     val valid = paise != null && paise > 0 && day != null
 
@@ -223,16 +246,36 @@ fun AddSpendSheet(state: AppState, onAdd: (Long, TxnType, LocalDate, String, Str
                 )
             }
         }
-        OutlinedTextField(
-            amount, { amount = it }, label = { Text("Amount (₹)") }, singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                amount, { amount = it }, label = { Text(if (currency == "INR") "Amount (₹)" else "Amount ($currency)") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f),
+            )
+            Text(
+                "🎤", fontSize = 22.sp,
+                modifier = Modifier.clip(CircleShape).background(Pal.surface2).clickable { speak() }.padding(12.dp),
+            )
+        }
+        if (heard.isNotEmpty()) Text(heard, color = Pal.muted, fontSize = 12.sp)
+        if (state.rates.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                (listOf("INR") + state.rates.keys.sorted()).forEach { c ->
+                    val on = currency == c
+                    Text(
+                        c, color = Pal.fg, fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                        modifier = Modifier.clip(CircleShape).background(if (on) Pal.accent.copy(alpha = .22f) else Pal.surface2)
+                            .border(1.dp, if (on) Pal.accent else Pal.line, CircleShape).clickable { currency = c }.padding(horizontal = 14.dp, vertical = 7.dp),
+                    )
+                }
+            }
+            if (currency != "INR" && paise != null) Text("≈ ${rupees(paise)} at ${state.rates[currency]} per $currency", color = Pal.muted, fontSize = 12.sp)
+        }
         CategoryPicker(state, category, { category = it }, { creating = true })
         OutlinedTextField(note, { note = it }, label = { Text("What was it? (optional)") }, modifier = Modifier.fillMaxWidth())
         AccountPicker(state, accountId) { accountId = it }
         TagField(state, tags) { tags = it }
         OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true, isError = day == null, modifier = Modifier.fillMaxWidth())
-        GradientButton("Add spend", enabled = valid) { onAdd(paise!!, type, day!!, category, note.trim(), accountId, cleanTags(tags)) }
+        GradientButton("Add spend", enabled = valid) { onAdd(NewSpend(paise!!, type, day!!, category, note.trim(), accountId, cleanTags(tags), currency, if (currency == "INR") 0 else typed!!)) }
     }
     if (creating) NewCategorySheet(state, onDone = { name -> if (name != null) category = name; creating = false })
 }
@@ -352,6 +395,30 @@ fun AccountSheet(state: AppState, editing: Account?, onDone: () -> Unit) {
             TextButton(onClick = { if (confirmDelete) { state.deleteAccount(editing); onDone() } else confirmDelete = true }) {
                 Text(if (confirmDelete) "Tap again: spends stay, just unassigned" else "Delete wallet", color = Pal.bad)
             }
+        }
+    }
+}
+
+/** Carve part of a bill into another category: "₹300 of this was Groceries". */
+@Composable
+private fun SplitBox(state: AppState, txn: Txn, onSplit: (Long, String) -> Boolean) {
+    var open by remember { mutableStateOf(false) }
+    var amount by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("Groceries") }
+    var error by remember { mutableStateOf("") }
+    TextButton(onClick = { open = !open }) { Text(if (open) "Hide split" else "✂️ Split this bill", color = Pal.accent) }
+    if (open) {
+        Text("Move part of ${rupees(txn.amountPaise)} into another category. The rest stays here.", color = Pal.muted, fontSize = 12.sp)
+        OutlinedTextField(
+            amount, { amount = it }, label = { Text("Amount to move (₹)") }, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+        )
+        CategoryPicker(state, category, { category = it }, {})
+        if (error.isNotEmpty()) Text(error, color = Pal.bad, fontSize = 12.sp)
+        GradientButton("Split off") {
+            val p = runCatching { BigDecimal(amount.replace(",", "")).movePointRight(2).toLong() }.getOrNull()
+            if (p == null || p <= 0 || p >= txn.amountPaise) error = "Enter an amount smaller than the bill."
+            else if (!onSplit(p, category)) error = "Could not split."
         }
     }
 }

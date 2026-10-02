@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.expensetracker.data.Backup
+import app.expensetracker.data.Export
 import app.expensetracker.data.Prefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -177,6 +178,87 @@ fun BackupCard(state: AppState) {
                 }
             }
             if (status.isNotEmpty()) Text(status, color = Pal.accent, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ReportsCard(state: AppState) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var range by remember { mutableStateOf(Export.Range.THIS_MONTH) }
+    var status by remember { mutableStateOf("") }
+
+    fun save(uri: Uri?, write: (java.io.OutputStream, List<app.expensetracker.data.Txn>) -> Unit) {
+        if (uri == null) return
+        scope.launch {
+            val rows = Export.select(state.txns, range)
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openOutputStream(uri)?.use { write(it, rows) } }.isSuccess
+            }
+            status = if (ok) "Saved ${rows.size} transactions (${range.label.lowercase()})." else "Could not save the file."
+        }
+    }
+    val xlsx = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    ) { uri -> save(uri) { out, rows -> Export.writeXlsx(out, rows) { state.accountName(it) } } }
+    val pdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        save(uri) { out, rows -> Export.writePdf(out, "${range.label}, from Spendr", rows) { state.accountName(it) } }
+    }
+
+    Card {
+        Column {
+            SectionTitle("Reports")
+            Text("Save a report to share or keep. Pick what it covers.", color = Pal.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Export.Range.entries.forEach { r ->
+                    val on = range == r
+                    Text(
+                        r.label, color = Pal.fg, fontSize = 13.sp,
+                        modifier = Modifier.clip(CircleShape).background(if (on) Pal.accent.copy(alpha = .3f) else Pal.surface2)
+                            .border(1.dp, if (on) Pal.accent else Pal.line, CircleShape).clickable { range = r }.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+            }
+            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallButton("Excel", primary = true) { xlsx.launch("spendr-${range.name.lowercase()}-${LocalDate.now()}.xlsx") }
+                SmallButton("PDF", primary = true) { pdf.launch("spendr-${range.name.lowercase()}-${LocalDate.now()}.pdf") }
+            }
+            if (status.isNotEmpty()) Text(status, color = Pal.accent, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+@Composable
+fun CurrenciesCard(state: AppState) {
+    var code by remember { mutableStateOf("") }
+    var rate by remember { mutableStateOf("") }
+    val r = rate.trim().toDoubleOrNull()
+    val c = code.trim().uppercase()
+    Card {
+        Column {
+            SectionTitle("Other currencies")
+            Text(
+                "For spends abroad. Type how many rupees one unit is worth (for example USD 83.5). Spendr has no internet, so you set the rate.",
+                color = Pal.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+            )
+            state.rates.entries.sortedBy { it.key }.forEach { (k, v) ->
+                SettingRow(k, "₹$v for 1 $k") { SmallButton("Remove") { state.setRate(k, 0.0) } }
+            }
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.OutlinedTextField(code, { code = it.take(3) }, label = { Text("Code") }, singleLine = true, modifier = Modifier.weight(1f))
+                androidx.compose.material3.OutlinedTextField(
+                    rate, { rate = it }, label = { Text("₹ per 1") }, singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(Modifier.padding(top = 10.dp)) {
+                SmallButton("Add currency", primary = true) {
+                    if (c.length == 3 && r != null && r > 0) { state.setRate(c, r); code = ""; rate = "" }
+                }
+            }
         }
     }
 }

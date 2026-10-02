@@ -33,6 +33,13 @@ class TodayWidget : AppWidgetProvider() {
                 R.id.w_root,
                 PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT),
             )
+            views.setOnClickPendingIntent(
+                R.id.w_add,
+                PendingIntent.getActivity(
+                    context, 1, Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_ADD, true),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
             manager.updateAppWidget(id, views)
         }
     }
