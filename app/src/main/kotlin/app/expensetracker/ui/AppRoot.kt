@@ -49,6 +49,16 @@ private enum class Tab(val label: String, val icon: String) {
 fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = false, onOpenAddHandled: () -> Unit = {}) {
     val context = LocalContext.current
     val state = remember { AppState(context) }
+    // Pick up changes made from a notification or a new SMS while the app is open, and refresh on coming back.
+    androidx.compose.runtime.DisposableEffect(state) {
+        val stop = app.expensetracker.data.DataEvents.listen { state.refresh() }
+        val owner = context as? androidx.lifecycle.LifecycleOwner
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) state.refresh()
+        }
+        owner?.lifecycle?.addObserver(observer)
+        onDispose { stop(); owner?.lifecycle?.removeObserver(observer) }
+    }
     var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
     var editing by remember { mutableStateOf<Txn?>(null) }
     var adding by remember { mutableStateOf(false) }

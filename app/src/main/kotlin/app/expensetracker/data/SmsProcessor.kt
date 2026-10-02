@@ -31,6 +31,7 @@ object SmsProcessor {
         // A message that carries its own time (07:50:56) is the same transaction however often it arrives.
         val seed = if (Regex("""\d{1,2}:\d{2}:\d{2}""").containsMatchIn(body)) body else body + "|" + receivedMillis / 60_000
         val id = db.insertParsed(parsed, day, receivedMillis, "sms", seed, body)
+        if (id > 0) app.expensetracker.data.DataEvents.changed()
         if (id > 0 && notify) {
             db.get(id)?.let { runCatching { Notifier.show(context, it) } }
             runCatching { Alerts.checkBudgets(context) }

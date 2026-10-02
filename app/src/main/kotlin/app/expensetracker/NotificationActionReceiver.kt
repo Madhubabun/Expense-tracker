@@ -19,12 +19,14 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 val category = intent.getStringExtra(Notifier.EXTRA_CATEGORY) ?: return
                 db.setCategoryAndComment(id, category, txn.comment)
                 db.get(id)?.let { Notifier.show(context, it, quiet = true) }
+                app.expensetracker.data.DataEvents.changed()
             }
             Notifier.ACTION_NOTE -> {
                 val note = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(Notifier.KEY_NOTE)?.toString()?.trim()
                 if (!note.isNullOrEmpty()) db.setComment(id, note)
                 // Closing the notification is the confirmation that the comment was saved.
                 Notifier.cancel(context, id)
+                app.expensetracker.data.DataEvents.changed()
             }
         }
     }
