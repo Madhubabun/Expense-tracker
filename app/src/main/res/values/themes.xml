@@ -5,14 +5,15 @@
     <!-- The four category buttons inside the notification -->
     <style name="NotifButton">
         <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">32dp</item>
+        <item name="android:layout_height">36dp</item>
         <item name="android:layout_weight">1</item>
         <item name="android:layout_marginEnd">4dp</item>
         <item name="android:background">@drawable/bg_notif_btn</item>
         <item name="android:gravity">center</item>
         <item name="android:singleLine">true</item>
         <item name="android:ellipsize">end</item>
-        <item name="android:textSize">11sp</item>
-        <item name="android:textColor">?android:attr/textColorPrimary</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textStyle">bold</item>
     </style>
 </resources>

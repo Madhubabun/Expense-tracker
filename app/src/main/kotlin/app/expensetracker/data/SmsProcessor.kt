@@ -24,6 +24,7 @@ object SmsProcessor {
     fun process(context: Context, body: String, sender: String?, receivedMillis: Long, notify: Boolean): Long {
         val parsed = SmsParser.parse(body, sender) ?: return -1
         val db = Db.get(context)
+        if (db.hasBody(body)) return -1 // this exact message is already saved
         val day = Instant.ofEpochMilli(receivedMillis).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
         // Same SMS seen live and again during import lands on the same key (body + minute).
         if ((parsed.epochDay ?: day) < Prefs.startDay(context)) return SKIPPED_OLD
@@ -37,6 +38,36 @@ object SmsProcessor {
             runCatching { TodayWidget.refresh(context) }
         }
         return id
+    }
+
+    /**
+     * Looks for bank SMS that arrived since the last scan and were never seen live (the phone was asleep or
+     * the app was stopped), saves them, and sends the alert for recent ones. Does nothing without SMS access.
+     */
+    @Synchronized
+    fun catchUp(context: Context): Int {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return 0
+        val since = Prefs.lastScan(context)
+        val now = System.currentTimeMillis()
+        var newest = since
+        var added = 0
+        val cursor = runCatching {
+            context.contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body", "date"), "date > ?", arrayOf((since - 120_000).toString()), "date ASC")
+        }.getOrNull() ?: return 0
+        cursor.use { c ->
+            val addressIdx = c.getColumnIndexOrThrow("address")
+            val bodyIdx = c.getColumnIndexOrThrow("body")
+            val dateIdx = c.getColumnIndexOrThrow("date")
+            while (c.moveToNext()) {
+                val date = c.getLong(dateIdx)
+                newest = maxOf(newest, date)
+                val body = c.getString(bodyIdx) ?: continue
+                val recent = now - date < 48 * 3_600_000L
+                if (process(context, body, c.getString(addressIdx), date, notify = recent) > 0) added++
+            }
+        }
+        Prefs.setLastScan(context, newest)
+        return added
     }
 
     /** Finds "processed" confirmations in the inbox and removes the extra spends they created. Returns how many. */

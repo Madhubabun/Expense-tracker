@@ -14,6 +14,9 @@ object Categories {
     const val TRANSFER = "Transfer"
     const val CARD_BILL = "Card bill payment"
     const val BANK_CHARGES = "Bank charges"
+
+    /** Money taken out of an ATM. It moves into the Cash wallet, so it is not spending until you spend the cash. */
+    const val CASH = "Cash withdrawal"
     const val UNCATEGORIZED = ""
 
     /** Categories that ship with the app. Colours are ARGB. People add their own on top of these. */
@@ -30,6 +33,7 @@ object Categories {
         Builtin(BANK_CHARGES, "🏦", 0xFFB0AEC4),
         Builtin("Salary", "💰", 0xFF5CE08A),
         Builtin(TRANSFER, "🔁", 0xFF8F8DA2),
+        Builtin(CASH, "🏧", 0xFF5CE08A),
         Builtin(CARD_BILL, "💳", 0xFF8F8DA2),
         Builtin("Other", "🧾", 0xFFB0AEC4),
     )
@@ -37,7 +41,7 @@ object Categories {
     val defaults = builtins.map { it.name }
 
     /** Categories that are left out of spending and income totals. */
-    val excludedFromTotals = setOf(TRANSFER, CARD_BILL)
+    val excludedFromTotals = setOf(TRANSFER, CARD_BILL, CASH)
 }
 
 data class ParsedTxn(

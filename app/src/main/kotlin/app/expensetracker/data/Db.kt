@@ -62,7 +62,7 @@ data class Category(val name: String, val emoji: String, val color: Long, val im
 
 /** All data lives in this one SQLite file on the phone. Nothing is sent anywhere. */
 class Db private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 9) {
+    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 10) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -132,6 +132,9 @@ class Db private constructor(context: Context) :
         }
         if (oldVersion < 7) createWordCategories(db)
         if (oldVersion < 8) db.execSQL("ALTER TABLE txn ADD COLUMN pair_state INTEGER NOT NULL DEFAULT 0")
+        if (oldVersion < 10) {
+            db.execSQL("INSERT OR IGNORE INTO category(name, emoji, color, image, builtin, sort) VALUES (?, ?, ?, NULL, 1, 99)", arrayOf(Categories.CASH, "🏧", 0xFF5CE08A))
+        }
         if (oldVersion < 9) {
             db.execSQL("ALTER TABLE txn ADD COLUMN body TEXT")
             db.execSQL("ALTER TABLE txn ADD COLUMN keep_both INTEGER NOT NULL DEFAULT 0")
@@ -475,6 +478,10 @@ class Db private constructor(context: Context) :
         if (id < 0 && body != null) writableDatabase.execSQL("UPDATE txn SET body = ? WHERE dedup = ? AND body IS NULL", arrayOf(body, dedup))
         return id
     }
+
+    /** True when a saved spend already came from exactly this SMS text. */
+    fun hasBody(body: String): Boolean =
+        readableDatabase.rawQuery("SELECT 1 FROM txn WHERE body = ? LIMIT 1", arrayOf(body)).use { it.moveToFirst() }
 
     /**
      * Bank debits that look like the same payment: same wallet, same amount, within ten minutes, and not

@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         Notifier.ensureChannel(this)
         Reminders.schedule(this)
+        Thread { runCatching { app.expensetracker.data.SmsProcessor.catchUp(applicationContext) } }.start()
         locked.value = Lock.shouldLock(this)
         openTxnId.longValue = intent.getLongExtra(Notifier.EXTRA_TXN_ID, -1L)
         openAdd.value = intent.getBooleanExtra(EXTRA_ADD, false)

@@ -33,6 +33,7 @@ object Categorizer {
         if (type == TxnType.CREDIT) {
             return if (Regex("""(?i)\bsalary\b""").containsMatchIn(text)) "Salary" else null
         }
+        if (Regex("""(?i)\b(atm|cash\s+(?:withdrawal|wdl)|nfs)\b""").containsMatchIn(text)) return Categories.CASH
         // Merchant name first, so "Sent Rs.110 ... To FAMILY KITCHEN" matches on the merchant.
         val fromMerchant = merchant?.lowercase()?.let { match(it) }
         if (fromMerchant != null) return fromMerchant

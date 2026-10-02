@@ -20,11 +20,26 @@ object Reminders {
         }
         // Inexact, so Android may shift it a little to save battery. Scheduling again replaces the old alarm.
         am.setInexactRepeating(AlarmManager.RTC_WAKEUP, first.timeInMillis, AlarmManager.INTERVAL_DAY, pending)
+        // Every 15 minutes, check the inbox for bank messages that were missed while the phone was asleep.
+        val scan = PendingIntent.getBroadcast(
+            context, 78, Intent(context, CatchUpReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        am.setInexactRepeating(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + AlarmManager.INTERVAL_FIFTEEN_MINUTES, AlarmManager.INTERVAL_FIFTEEN_MINUTES, scan)
+    }
+}
+
+class CatchUpReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val pending = goAsync()
+        Thread {
+            try { runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) } } finally { pending.finish() }
+        }.start()
     }
 }
 
 class DailyReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) }
         runCatching { Alerts.nightlySummary(context) }
         runCatching { Alerts.billReminders(context) }
         runCatching { Alerts.loanReminders(context) }
@@ -38,6 +53,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         Reminders.schedule(context)
+        runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) }
         runCatching { TodayWidget.refresh(context) }
     }
 }

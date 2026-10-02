@@ -93,6 +93,9 @@ fun WalletsScreen(state: AppState) {
         }
         AddButton("＋ Add a wallet") { adding = true }
 
+        MoneyCalendarCard(state)
+        SubscriptionRadarCard(state)
+
         // Goals
         SectionTitle("Goals")
         if (state.goals.isEmpty()) Text("Save for a trip or cap what you spend on something. Add your first goal.", color = Pal.muted, fontSize = 13.sp)

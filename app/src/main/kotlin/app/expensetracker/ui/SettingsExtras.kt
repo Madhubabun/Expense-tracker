@@ -64,6 +64,18 @@ fun AlertsCard() {
             FlagRow("Unusual spends", "A heads-up when a spend is far bigger than normal", Prefs.UNUSUAL_ALERTS, true)
             FlagRow("9 pm summary", "Today's total and what still needs a category", Prefs.NIGHTLY_SUMMARY, true)
             FlagRow("Bill reminders", "The day before a monthly bill is due", Prefs.BILL_REMINDERS, true)
+            val context = LocalContext.current
+            val power = context.getSystemService(android.os.PowerManager::class.java)
+            var unrestricted by remember { mutableStateOf(power.isIgnoringBatteryOptimizations(context.packageName)) }
+            SettingRow("Instant alerts", if (unrestricted) "Allowed to run in the background" else "Let Spendr run in the background so alerts are never late") {
+                if (!unrestricted) SmallButton("Allow", primary = true) {
+                    runCatching {
+                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:" + context.packageName)))
+                    }
+                    unrestricted = power.isIgnoringBatteryOptimizations(context.packageName)
+                }
+            }
+            Text("On Samsung phones also open Settings › Battery › Background usage limits and add Spendr to “Never sleeping apps”.", color = Pal.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }

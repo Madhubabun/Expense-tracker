@@ -43,6 +43,9 @@ class AppState(private val context: Context) {
         private set
     var hiddenCount by mutableStateOf(0)
         private set
+    /** Regular payments (subscriptions, SIPs, EMIs) found in all history. */
+    var subscriptions by mutableStateOf<List<app.expensetracker.core.Subscription>>(emptyList())
+
     /** Spends that look like the same payment twice, each mapped to the other one. */
     var repeatPairs by mutableStateOf<Map<Long, Long>>(emptyMap())
 
@@ -81,6 +84,13 @@ class AppState(private val context: Context) {
         txns = allTxns.filter { it.epochDay >= startDay }
         hiddenCount = allTxns.size - txns.size
         repeatPairs = db.possibleRepeats()
+        subscriptions = runCatching {
+            app.expensetracker.core.Subscriptions.detect(
+                allTxns.filter { it.type == TxnType.DEBIT && it.kind == TxnKind.NORMAL && !it.merchant.isNullOrBlank() }
+                    .map { app.expensetracker.core.SpendPoint(it.merchant!!.lowercase(), it.merchant, it.epochDay, it.amountPaise) },
+                LocalDate.now().toEpochDay(),
+            )
+        }.getOrDefault(emptyList())
         categories = db.categories()
         categoryBudgets = db.categoryBudgets()
         accounts = db.accounts()
@@ -138,6 +148,18 @@ class AppState(private val context: Context) {
         refresh()
     }
 
+    /** A read on how you spend, from the last 90 days. Null until there are ten spends. */
+    fun persona(): app.expensetracker.core.Persona? {
+        val from = LocalDate.now().toEpochDay() - 90
+        return app.expensetracker.core.Personality.describe(
+            txns.filter { it.type == TxnType.DEBIT && it.kind == TxnKind.NORMAL && it.category !in Categories.excludedFromTotals && it.epochDay > from }
+                .map {
+                    val hour = if (it.atMillis > 0 && it.source != "manual") java.time.Instant.ofEpochMilli(it.atMillis).atZone(java.time.ZoneId.systemDefault()).hour else 12
+                    app.expensetracker.core.SpendDot(it.epochDay, hour, it.amountPaise, it.category)
+                },
+        )
+    }
+
     fun mergeRepeat(keep: Long, drop: Long) { db.mergeRepeat(keep, drop); refresh() }
 
     fun keepBoth(a: Long, b: Long) { db.keepBoth(a, b); refresh() }
@@ -181,7 +203,9 @@ class AppState(private val context: Context) {
 
     /** Opening balance plus everything received minus everything spent in that wallet since tracking started. */
     fun balanceOf(a: Account): Long =
-        a.openingPaise + txns.filter { it.accountId == a.id }.sumOf { if (it.type == TxnType.CREDIT) it.amountPaise else -it.amountPaise }
+        a.openingPaise + txns.filter { it.accountId == a.id }.sumOf { if (it.type == TxnType.CREDIT) it.amountPaise else -it.amountPaise } +
+            // ATM withdrawals from any bank account land in the cash wallet.
+            if (a.kind == AccountKind.CASH) txns.filter { it.category == Categories.CASH && it.type == TxnType.DEBIT }.sumOf { it.amountPaise } else 0L
 
     fun addAccount(name: String, kind: AccountKind, openingPaise: Long, color: Long) {
         db.addAccount(name.trim(), kind, openingPaise, color)

@@ -21,7 +21,7 @@ import app.expensetracker.data.Txn
 import app.expensetracker.ui.MainActivity
 
 object Notifier {
-    private const val CHANNEL = "transactions"
+    private const val CHANNEL = "transactions2"
     const val EXTRA_TXN_ID = "txn_id"
     const val EXTRA_CATEGORY = "category"
     const val KEY_NOTE = "note"
@@ -35,8 +35,12 @@ object Notifier {
         if (Build.VERSION.SDK_INT < 26) return
         val channel = NotificationChannel(CHANNEL, "Transactions", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "Asks for a category when a debit or credit SMS arrives"
+            enableVibration(true)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
-        context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.deleteNotificationChannel("transactions") // the old one was created before the sound settings
+        nm.createNotificationChannel(channel)
     }
 
     /** Four category buttons to show: the current or suggested category first, then the usual ones. */
@@ -79,6 +83,7 @@ object Notifier {
             } else {
                 val mark = if (name == t.category) "✓ " else ""
                 views.setViewVisibility(viewId, View.VISIBLE)
+                views.setInt(viewId, "setBackgroundResource", if (name == t.category) R.drawable.bg_notif_btn_on else R.drawable.bg_notif_btn)
                 views.setTextViewText(viewId, mark + (categories[name]?.emoji ?: "🧾") + " " + name)
                 views.setOnClickPendingIntent(viewId, categoryIntent(context, t.id, name, nid * 10 + i))
             }
@@ -103,8 +108,10 @@ object Notifier {
             .setCustomHeadsUpContentView(views)
             .setContentIntent(openApp)
             .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setColor(0xFF6C4DFF.toInt())
             .setOnlyAlertOnce(quiet)
-            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .addAction(NotificationCompat.Action.Builder(0, "💬 Add comment", noteIntent).addRemoteInput(remoteInput).build())
 
         NotificationManagerCompat.from(context).notify(nid, builder.build())

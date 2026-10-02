@@ -24,6 +24,17 @@ object Prefs {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putLong(START_DAY, epochDay).apply()
     }
 
+    /** Time of the newest SMS the catch-up scan has already looked at. */
+    fun lastScan(context: Context): Long {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        if (!prefs.contains("last_sms_scan")) prefs.edit().putLong("last_sms_scan", System.currentTimeMillis()).apply()
+        return prefs.getLong("last_sms_scan", 0L)
+    }
+
+    fun setLastScan(context: Context, millis: Long) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putLong("last_sms_scan", millis).apply()
+    }
+
     const val BUDGET_ALERTS = "budget_alerts"
     const val NIGHTLY_SUMMARY = "nightly_summary"
     const val BILL_REMINDERS = "bill_reminders"
