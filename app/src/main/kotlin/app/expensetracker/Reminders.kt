@@ -11,6 +11,9 @@ import java.util.Calendar
 object Reminders {
     fun schedule(context: Context) {
         val am = context.getSystemService(AlarmManager::class.java)
+        // Already armed: setting them again on every launch would keep pushing the next run back.
+        fun armed(code: Int, target: Class<*>) = PendingIntent.getBroadcast(context, code, Intent(context, target), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE) != null
+        if (armed(77, DailyReceiver::class.java) && armed(78, CatchUpReceiver::class.java)) return
         val pending = PendingIntent.getBroadcast(
             context, 77, Intent(context, DailyReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -39,12 +42,17 @@ class CatchUpReceiver : BroadcastReceiver() {
 
 class DailyReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) }
-        runCatching { Alerts.nightlySummary(context) }
-        runCatching { Alerts.billReminders(context) }
-        runCatching { Alerts.loanReminders(context) }
-        runCatching { app.expensetracker.data.Plans.applyRepeats(context) }
-        runCatching { TodayWidget.refresh(context) }
+        val pending = goAsync()
+        Thread {
+            try {
+                runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) }
+                runCatching { Alerts.nightlySummary(context) }
+                runCatching { Alerts.billReminders(context) }
+                runCatching { Alerts.loanReminders(context) }
+                runCatching { app.expensetracker.data.Plans.applyRepeats(context) }
+                runCatching { TodayWidget.refresh(context) }
+            } finally { pending.finish() }
+        }.start()
     }
 }
 
@@ -53,7 +61,12 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         Reminders.schedule(context)
-        runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) }
-        runCatching { TodayWidget.refresh(context) }
+        val pending = goAsync()
+        Thread {
+            try {
+                runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) }
+                runCatching { TodayWidget.refresh(context) }
+            } finally { pending.finish() }
+        }.start()
     }
 }

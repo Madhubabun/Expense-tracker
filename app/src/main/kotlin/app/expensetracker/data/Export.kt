@@ -32,7 +32,7 @@ object Export {
 
     // Excel
 
-    private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+    private fun esc(s: String) = s.filter { it >= ' ' || it == '\n' || it == '\t' }.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
     private fun col(i: Int) = ('A' + i).toString()
 

@@ -24,7 +24,7 @@ object SmsProcessor {
     fun process(context: Context, body: String, sender: String?, receivedMillis: Long, notify: Boolean): Long {
         val parsed = SmsParser.parse(body, sender) ?: return -1
         val db = Db.get(context)
-        if (db.hasBody(body)) return -1 // this exact message is already saved
+        if (db.hasBody(body, receivedMillis)) return -1 // this exact message was already saved at about the same time
         val day = Instant.ofEpochMilli(receivedMillis).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
         // Same SMS seen live and again during import lands on the same key (body + minute).
         if ((parsed.epochDay ?: day) < Prefs.startDay(context)) return SKIPPED_OLD
@@ -32,7 +32,7 @@ object SmsProcessor {
         val seed = if (Regex("""\d{1,2}:\d{2}:\d{2}""").containsMatchIn(body)) body else body + "|" + receivedMillis / 60_000
         val id = db.insertParsed(parsed, day, receivedMillis, "sms", seed, body)
         if (id > 0 && notify) {
-            db.get(id)?.let { Notifier.show(context, it) }
+            db.get(id)?.let { runCatching { Notifier.show(context, it) } }
             runCatching { Alerts.checkBudgets(context) }
             runCatching { Alerts.checkUnusual(context, id) }
             runCatching { TodayWidget.refresh(context) }
@@ -52,7 +52,7 @@ object SmsProcessor {
         var newest = since
         var added = 0
         val cursor = runCatching {
-            context.contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body", "date"), "date > ?", arrayOf((since - 120_000).toString()), "date ASC")
+            context.contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body", "date"), "date > ?", arrayOf(since.toString()), "date ASC")
         }.getOrNull() ?: return 0
         cursor.use { c ->
             val addressIdx = c.getColumnIndexOrThrow("address")

@@ -11,7 +11,29 @@ import java.time.Month
 object SmsParser {
 
     private val amountRegex =
-        Regex("""(?:rs\.?|inr|₹)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)""", RegexOption.IGNORE_CASE)
+        Regex("""(?:\b(?:rs\.?|inr)|₹)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)""", RegexOption.IGNORE_CASE)
+
+    // SBI style: "debited by 20.0 on date ..." with no currency word.
+    private val bareAmountRegex =
+        Regex("""(?:debited|credited)\s+(?:by|for|with)\s+([0-9][0-9,]*(?:\.[0-9]{1,2})?)""", RegexOption.IGNORE_CASE)
+
+    // Messages that mention a debit but are not one: failures, reminders of a future debit, money requests.
+    private val notADebit = Regex(
+        """\b(fail(?:ed|ure)|declin\w*|unsuccessful|will\s+be\s+debited|to\s+be\s+debited|requested\s+(?:money|payment)|collect\s+request)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    // The bank-side payment of a credit card bill.
+    private val cardBillDebit = Regex(
+        """(?i)\b(?:towards|payment\s+(?:to|for)|bill\s+payment)\b[^.]{0,40}\bcredit\s*card\b"""
+    )
+
+    private val upiRefRegex = Regex("""(?i)\bupi[:/\s-]+(\d{9,})""")
+    private val spentOnRegex = Regex(
+        """(?i)\bon\s+\d{1,2}[-/][A-Za-z0-9]{2,3}[-/]\d{2,4}\s+(?:at|on)\s+([A-Za-z][A-Za-z0-9&'._ -]{1,30}?)(?=\s*[.\n,]|\s+(?:avl|available|limit|if|not)\b|$)""",
+    )
+    private val upiMerchantRegex = Regex("""(?i)\bUPI/(?:P2M|P2A)/\d+/([A-Za-z][A-Za-z0-9 &.'-]{1,30}?)(?=[/\s.,]|$)""")
+    private val afterTimeRegex = Regex("""(?i)\d{2}:\d{2}:\d{2}\s+([A-Za-z][A-Za-z0-9&'._ -]{1,30}?)\s+(?:avl|available)\b""")
 
     private val otpRegex = Regex(
         """\b(otp|one[\s-]?time\s+(?:password|pin)|verification\s+code|do\s+not\s+share|never\s+share)\b""",
@@ -66,6 +88,9 @@ object SmsParser {
 
     private val dateRegex = Regex("""\b(\d{1,2})[/-](\d{1,2}|[A-Za-z]{3})[/-](\d{4}|\d{2})\b""")
 
+    private val compactDate = Regex("""\b(\d{1,2})([A-Za-z]{3})(\d{2,4})\b""")
+    private val isoDate = Regex("""\b(\d{4})-(\d{2})-(\d{2})\b""")
+
     private val banks = listOf(
         "HDFC" to "HDFC", "ICICI" to "ICICI", "SBI" to "SBI", "State Bank" to "SBI",
         "Axis" to "Axis", "Canara" to "Canara", "Kotak" to "Kotak", "PNB" to "PNB",
@@ -79,15 +104,17 @@ object SmsParser {
         val text = body.replace(' ', ' ').trim()
         if (text.isEmpty()) return null
         if (otpRegex.containsMatchIn(text)) return null
+        if (notADebit.containsMatchIn(text)) return null
 
         val amountMatch = amountRegex.findAll(text).firstOrNull { m ->
             val before = text.substring((m.range.first - 25).coerceAtLeast(0), m.range.first)
             !balanceContext.containsMatchIn(before)
-        } ?: return null
+        } ?: bareAmountRegex.find(text) ?: return null
         val amountPaise = toPaise(amountMatch.groupValues[1]) ?: return null
         if (amountPaise <= 0) return null
 
         val isCardPayment = cardPaymentRegex.containsMatchIn(text)
+        val isBillDebit = !isCardPayment && cardBillDebit.containsMatchIn(text)
         val debitAt = debitRegex.find(text)?.range?.first
         val creditAt = creditRegex.find(text)?.range?.first
 
@@ -104,9 +131,9 @@ object SmsParser {
         ) return null
 
         val merchant = if (type == TxnType.DEBIT) debitMerchant(text) else creditSender(text)
-        val kind = if (isCardPayment) TxnKind.CARD_BILL_PAYMENT else TxnKind.NORMAL
+        val kind = if (isCardPayment || (isBillDebit && type == TxnType.DEBIT)) TxnKind.CARD_BILL_PAYMENT else TxnKind.NORMAL
         val category = when {
-            isCardPayment -> Categories.CARD_BILL
+            isCardPayment || kind == TxnKind.CARD_BILL_PAYMENT -> Categories.CARD_BILL
             else -> Categorizer.suggest(merchant, text, type)
         }
 
@@ -117,7 +144,7 @@ object SmsParser {
             merchant = merchant,
             bank = detectBank(text, sender),
             account = accountRegex.find(text)?.groupValues?.get(1),
-            ref = achRegex.find(text)?.groupValues?.get(2) ?: refRegex.find(text)?.groupValues?.get(1),
+            ref = achRegex.find(text)?.groupValues?.get(2) ?: refRegex.find(text)?.groupValues?.get(1) ?: upiRefRegex.find(text)?.groupValues?.get(1),
             epochDay = findDate(text)?.toEpochDay(),
             suggestedCategory = category,
             confirmation = type == TxnType.DEBIT && mandateWord.containsMatchIn(text) && processedWord.containsMatchIn(text),
@@ -136,6 +163,9 @@ object SmsParser {
     private fun debitMerchant(text: String): String? {
         achRegex.find(text)?.let { clean(it.groupValues[1])?.let { n -> return n } }
         towardsRegex.find(text)?.let { clean(it.groupValues[1])?.let { n -> return n } }
+        for (r in listOf(upiMerchantRegex, spentOnRegex, afterTimeRegex)) {
+            r.find(text)?.let { clean(it.groupValues[1])?.let { n -> return n } }
+        }
         toLineRegex.find(text)?.let { clean(it.groupValues[1])?.let { n -> return n } }
         toInlineRegex.find(text)?.let { m ->
             val n = clean(m.groupValues[1])
@@ -154,13 +184,26 @@ object SmsParser {
     }
 
     private fun detectBank(text: String, sender: String?): String? {
-        val haystack = text + " " + (sender ?: "")
-        return banks.firstOrNull { (needle, _) ->
-            Regex("""(?i)\b${Regex.escape(needle)}""").containsMatchIn(haystack)
-        }?.second
+        // The sender id (VM-KOTAKB) is the most reliable. In the text, take the first bank named, and ignore
+        // UPI handles such as "shop@icici" that only name the other person's bank.
+        fun find(haystack: String) = banks.mapNotNull { (needle, name) ->
+            Regex("""(?i)(?<![@.\w])${Regex.escape(needle)}""").find(haystack)?.let { it.range.first to name }
+        }.minByOrNull { it.first }?.second
+        return sender?.let { find(it) } ?: find(text)
     }
 
     private fun findDate(text: String): LocalDate? {
+        compactDate.find(text)?.let { m ->
+            val month = monthFromName(m.groupValues[2])
+            var year = m.groupValues[3].toIntOrNull()
+            if (month != null && year != null) {
+                if (year < 100) year += 2000
+                runCatching { LocalDate.of(year, month, m.groupValues[1].toInt()) }.getOrNull()?.let { return it }
+            }
+        }
+        isoDate.find(text)?.let { m ->
+            runCatching { LocalDate.of(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt()) }.getOrNull()?.let { return it }
+        }
         for (m in dateRegex.findAll(text)) {
             val day = m.groupValues[1].toIntOrNull() ?: continue
             val monthRaw = m.groupValues[2]

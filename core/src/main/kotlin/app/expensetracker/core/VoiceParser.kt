@@ -6,7 +6,7 @@ import java.math.BigDecimal
 data class VoiceEntry(val amountPaise: Long?, val type: TxnType, val note: String, val category: String?)
 
 object VoiceParser {
-    private val incomeWords = listOf("received", "got", "salary", "credited", "earned", "income", "refund", "cashback", "bonus")
+    private val incomeWords = listOf("received", "salary", "credited", "earned", "income", "refund", "cashback", "bonus")
     private val fillers = setOf(
         "spent", "spend", "paid", "pay", "for", "on", "at", "to", "rupees", "rupee", "rs", "inr", "of", "my", "the", "a", "an",
         "received", "got", "from", "add", "expense", "income", "i", "in",

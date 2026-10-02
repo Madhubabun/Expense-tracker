@@ -39,7 +39,7 @@ object Notifier {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
         val nm = context.getSystemService(NotificationManager::class.java)
-        nm.deleteNotificationChannel("transactions") // the old one was created before the sound settings
+        if (nm.getNotificationChannel("transactions") != null) nm.deleteNotificationChannel("transactions") // the old one was created before the sound settings
         nm.createNotificationChannel(channel)
     }
 
@@ -114,7 +114,7 @@ object Notifier {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .addAction(NotificationCompat.Action.Builder(0, "💬 Add comment", noteIntent).addRemoteInput(remoteInput).build())
 
-        NotificationManagerCompat.from(context).notify(nid, builder.build())
+        NotificationManagerCompat.from(context).notify("txn", nid, builder.build())
     }
 
     private fun categoryIntent(context: Context, id: Long, category: String, requestCode: Int): PendingIntent =
@@ -128,5 +128,5 @@ object Notifier {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-    fun cancel(context: Context, id: Long) = NotificationManagerCompat.from(context).cancel(id.toInt())
+    fun cancel(context: Context, id: Long) = NotificationManagerCompat.from(context).cancel("txn", id.toInt())
 }

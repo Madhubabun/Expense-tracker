@@ -57,3 +57,41 @@ class RadarTest {
         assertTrue(Categories.CASH in Categories.excludedFromTotals)
     }
 }
+
+class SmsAuditTest {
+    private fun parse(s: String, sender: String? = null) = SmsParser.parse(s, sender)
+
+    @Test
+    fun failedAndFutureDebitsAreIgnored() {
+        assertNull(parse("Your UPI txn of Rs 500 to X failed. Amount if debited will be reversed in 3-5 days"))
+        assertNull(parse("Rs 5000 will be debited on 05-Oct towards your SIP mandate"))
+    }
+
+    @Test
+    fun sbiBareAmountAndCompactDateAreRead() {
+        val p = assertNotNull(parse("Dear UPI user A/C X1234 debited by 20.0 on date 12Oct25 trf to RAMESH Refno 123456789012", "SBIUPI"))
+        assertEquals(2_000, p.amountPaise)
+        assertEquals(java.time.LocalDate.of(2025, 10, 12).toEpochDay(), p.epochDay)
+        assertEquals("SBI", p.bank)
+    }
+
+    @Test
+    fun upiHandleDoesNotChooseTheBankAndSenderWins() {
+        val p = assertNotNull(parse("Sent Rs.500.00 from Kotak Bank AC X1234 to shop@icici on 01-01-26. UPI Ref 123456789012", "VM-KOTAKB"))
+        assertEquals("Kotak", p.bank)
+    }
+
+    @Test
+    fun cardSpendMerchantsAreFound() {
+        val icici = assertNotNull(parse("INR 500.00 spent using ICICI Bank Card XX1234 on 01-Jan-26 on AMAZON. Avl Limit INR 50000", "ICICIB"))
+        assertEquals("AMAZON", icici.merchant)
+        val axis = assertNotNull(parse("Spent Card no. XX1234 INR 500 01-01-26 12:00:00 SWIGGY Avl Limit INR 9000"))
+        assertEquals("SWIGGY", axis.merchant)
+    }
+
+    @Test
+    fun bankSidePaymentOfACardBillIsNotSpending() {
+        val p = assertNotNull(parse("Rs 5000.00 debited from A/c XX1234 towards HDFC Credit Card XX9876 payment. UPI Ref 123456789012"))
+        assertEquals(TxnKind.CARD_BILL_PAYMENT, p.kind)
+    }
+}

@@ -429,7 +429,8 @@ class Db private constructor(context: Context) :
     /** Saves a parsed SMS. Returns the new row id, or -1 if the same transaction was already saved. */
     @Synchronized
     fun insertParsed(p: ParsedTxn, fallbackEpochDay: Long, atMillis: Long, source: String, dedupSeed: String, body: String? = null): Long {
-        val dedup = p.ref?.let { "ref:$it" } ?: ("h:" + sha256(dedupSeed))
+        // A transfer between your own accounts has one reference on both the debit and the credit, so credits get their own key.
+        val dedup = p.ref?.let { if (p.type == TxnType.CREDIT) "refc:$it" else "ref:$it" } ?: ("h:" + sha256(dedupSeed))
         // Banks often send an alert and later a "processed" confirmation for the same debit. Pair them so
         // the money is counted once. pair_state: 0 alert waiting, 1 confirmation waiting, 2 paired.
         val accountId = ensureSmsAccount(writableDatabase, p.bank, p.account)
@@ -480,8 +481,8 @@ class Db private constructor(context: Context) :
     }
 
     /** True when a saved spend already came from exactly this SMS text. */
-    fun hasBody(body: String): Boolean =
-        readableDatabase.rawQuery("SELECT 1 FROM txn WHERE body = ? LIMIT 1", arrayOf(body)).use { it.moveToFirst() }
+    fun hasBody(body: String, atMillis: Long): Boolean =
+        readableDatabase.rawQuery("SELECT 1 FROM txn WHERE body = ? AND ABS(at_ms - ?) < 120000 LIMIT 1", arrayOf(body, atMillis.toString())).use { it.moveToFirst() }
 
     /**
      * Bank debits that look like the same payment: same wallet, same amount, within ten minutes, and not
