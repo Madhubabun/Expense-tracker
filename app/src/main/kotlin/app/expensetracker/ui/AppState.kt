@@ -70,12 +70,26 @@ class AppState(private val context: Context) {
     var loans by mutableStateOf<List<Loan>>(emptyList())
         private set
     var repeats by mutableStateOf<List<Repeat>>(emptyList())
+
+    var investments by mutableStateOf<List<app.expensetracker.data.Investment>>(emptyList())
+
+    /** Repeats still to pay in the next seven days, overdue ones first. */
+    var next7 by mutableStateOf<List<app.expensetracker.data.RepeatDue>>(emptyList())
+
+    /** What is free to spend this month after the repeats still to pay. */
+    var safe by mutableStateOf(app.expensetracker.core.SafeToSpend.compute(0, 0, 0, 0, 0, LocalDate.now()))
         private set
 
     private val images = HashMap<String, Bitmap?>()
 
     init {
-        runCatching { Plans.applyRepeats(context) }
+        runCatching {
+            // One-off: merge the entries repeats used to make for themselves with their bank debits.
+            if (!Prefs.flag(context, "repeat_merge_v1", false)) {
+                Plans.mergeOldRepeatEntries(context)
+                Prefs.setFlag(context, "repeat_merge_v1", true)
+            }
+        }
         refresh()
     }
 
@@ -98,6 +112,16 @@ class AppState(private val context: Context) {
         goals = Plans.goals(context)
         loans = Plans.loans(context)
         repeats = Plans.repeats(context)
+        investments = Plans.investments(context)
+        runCatching {
+            val today = LocalDate.now()
+            val (received, expected) = Plans.monthIncome(context, today)
+            val dues = Plans.dues(repeats, today, received + expected)
+            val left = dues.filter { !it.paid && it.repeat.type == TxnType.DEBIT }.sumOf { it.amountPaise }
+            val month = Reports.summarize(reportTxns(), Period.MONTH, today)
+            safe = app.expensetracker.core.SafeToSpend.compute(received, expected, budgetPaise, left, month.spentPaise + month.investedPaise, today)
+            next7 = Plans.upcoming(context, today, 7)
+        }
         runCatching { app.expensetracker.TodayWidget.refresh(context) }
     }
 
@@ -264,11 +288,24 @@ class AppState(private val context: Context) {
 
     fun deleteLoan(l: Loan) { Plans.deleteLoan(context, l.id); refresh() }
 
-    fun saveRepeat(r: Repeat?, title: String, amount: Long, type: TxnType, category: String, accountId: Long, day: Int) {
-        Plans.saveRepeat(context, r?.id, title.trim(), amount, type, category, accountId, day)
-        Plans.applyRepeats(context)
+    fun saveRepeat(r: Repeat?, title: String, amount: Long, type: TxnType, category: String, accountId: Long, day: Int, rtype: String = "Other", pct: Int = 0) {
+        Plans.saveRepeat(context, r?.id, title.trim(), amount, type, category, accountId, day, rtype, pct)
         refresh()
     }
+
+    /** Every repeat's turn this month with its amount worked out and whether it has been paid. */
+    fun dues() = Plans.dues(context)
+
+    fun markPaid(r: Repeat, paid: Boolean) { Plans.markPaid(context, r.id, paid); refresh() }
+
+    fun saveInvestment(i: app.expensetracker.data.Investment?, name: String, invested: Long, value: Long) {
+        Plans.saveInvestment(context, i?.id, name.trim(), invested, value); refresh()
+    }
+
+    fun deleteInvestment(i: app.expensetracker.data.Investment) { Plans.deleteInvestment(context, i.id); refresh() }
+
+    /** Repeats due within [days] days from today, for the Next 30 days card. */
+    fun upcoming(days: Int) = Plans.upcoming(context, LocalDate.now(), days)
 
     fun deleteRepeat(r: Repeat) { Plans.deleteRepeat(context, r.id); refresh() }
 

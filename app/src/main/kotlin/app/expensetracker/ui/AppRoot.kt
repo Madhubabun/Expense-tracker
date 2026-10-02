@@ -42,7 +42,7 @@ import app.expensetracker.core.Period
 import app.expensetracker.data.Txn
 
 private enum class Tab(val label: String, val icon: String) {
-    TODAY("Today", "☀️"), WEEK("Week", "📅"), MONTH("Month", "🗓️"), YEAR("Year", "📈"), WALLETS("Wallets", "👛"),
+    OVERVIEW("Overview", "🏠"), EXPENSES("Expenses", "💸"), INCOME("Income", "💰"), STATS("Statistics", "📊"), PLANS("Plans", "🗂️"),
 }
 
 @Composable
@@ -59,7 +59,12 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
         owner?.lifecycle?.addObserver(observer)
         onDispose { stop(); owner?.lifecycle?.removeObserver(observer) }
     }
-    var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
+    var tab by rememberSaveable { mutableStateOf(Tab.OVERVIEW) }
+    // One period for Overview, Expenses, Income and Statistics, so switching tabs keeps the same view.
+    var period by rememberSaveable { mutableStateOf(app.expensetracker.core.Period.MONTH) }
+    var offset by rememberSaveable { mutableStateOf(0) }
+    val onPeriod: (app.expensetracker.core.Period) -> Unit = { period = it; offset = 0 }
+    val onOffset: (Int) -> Unit = { offset = it.coerceAtMost(0) }
     var editing by remember { mutableStateOf<Txn?>(null) }
     var adding by remember { mutableStateOf(false) }
     var newCategory by remember { mutableStateOf(false) }
@@ -89,7 +94,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
         if (openTxnId >= 0) {
             state.refresh()
             editing = state.txns.firstOrNull { it.id == openTxnId }
-            tab = Tab.TODAY
+            tab = Tab.OVERVIEW
             onOpenTxnHandled()
         }
     }
@@ -133,18 +138,18 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
     ) { padding: PaddingValues ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
-                Tab.TODAY -> TodayScreen(state) { editing = it }
-                Tab.WEEK -> PeriodScreen(state, Period.WEEK, { p, a -> insights = p to a }) { editing = it }
-                Tab.MONTH -> PeriodScreen(state, Period.MONTH, { p, a -> insights = p to a }) { editing = it }
-                Tab.YEAR -> PeriodScreen(state, Period.YEAR, { p, a -> insights = p to a }) { editing = it }
-                Tab.WALLETS -> WalletsScreen(state)
+                Tab.OVERVIEW -> OverviewScreen(state, period, offset, onPeriod, onOffset) { editing = it }
+                Tab.EXPENSES -> PeriodScreen(state, period, offset, onPeriod, onOffset, { p, a -> insights = p to a }) { editing = it }
+                Tab.INCOME -> IncomeScreen(state, period, offset, onPeriod, onOffset) { editing = it }
+                Tab.STATS -> StatsScreen(state, period, offset, onPeriod, onOffset) { p, a -> insights = p to a }
+                Tab.PLANS -> PlansScreen(state)
             }
             Box(
                 Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 12.dp).size(40.dp).clip(CircleShape)
                     .background(Pal.surface2).clickable { settingsOpen = true },
                 contentAlignment = Alignment.Center,
             ) { Text("⚙️", fontSize = 18.sp) }
-            if (tab != Tab.WALLETS) {
+            if (tab != Tab.PLANS) {
                 Box(
                     Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 80.dp).size(48.dp).clip(CircleShape)
                         .background(Pal.surface2).clickable { searching = true },

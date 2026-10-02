@@ -170,7 +170,7 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
                         if (!smsGranted()) { smsPermission.launch(Manifest.permission.READ_SMS) } else scope.launch {
                             busy = true
                             status = "Looking for repeated debits…"
-                            val n = withContext(Dispatchers.IO) { runCatching { SmsProcessor.cleanDuplicates(context) } }
+                            val n = withContext(Dispatchers.IO) { runCatching { SmsProcessor.cleanDuplicates(context) + app.expensetracker.data.Plans.mergeOldRepeatEntries(context) } }
                             state.refresh()
                             status = n.fold({ if (it == 0) "No repeats found." else "Removed $it repeated ${if (it == 1) "spend" else "spends"}." }, { "Could not check: ${it.message}" })
                             busy = false

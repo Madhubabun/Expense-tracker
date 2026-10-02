@@ -29,19 +29,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.expensetracker.core.Reports
 import app.expensetracker.core.TxnType
-import app.expensetracker.data.Account
-import app.expensetracker.data.AccountKind
+import app.expensetracker.data.Investment
+import app.expensetracker.data.RepeatDue
 import app.expensetracker.data.Goal
 import app.expensetracker.data.Loan
 import app.expensetracker.data.Repeat
 import java.time.LocalDate
 
-/** Wallets: cash, bank accounts, cards. Goals, loans and tags will join this screen. */
+/** Plans: repeats (EMIs, rent, SIPs, tithe), investments, goals and loans. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun WalletsScreen(state: AppState) {
-    var editing by remember { mutableStateOf<Account?>(null) }
-    var adding by remember { mutableStateOf(false) }
+fun PlansScreen(state: AppState) {
     var goalNew by remember { mutableStateOf(false) }
     var goalEditing by remember { mutableStateOf<Goal?>(null) }
     var goalAdding by remember { mutableStateOf<Goal?>(null) }
@@ -50,51 +48,67 @@ fun WalletsScreen(state: AppState) {
     var loanPaying by remember { mutableStateOf<Loan?>(null) }
     var repeatNew by remember { mutableStateOf(false) }
     var repeatEditing by remember { mutableStateOf<Repeat?>(null) }
+    var investNew by remember { mutableStateOf(false) }
+    var investEditing by remember { mutableStateOf<Investment?>(null) }
     val today = LocalDate.now()
     val monthStart = today.withDayOfMonth(1).toEpochDay()
-    val total = state.accounts.filter { it.kind != AccountKind.CARD }.sumOf { state.balanceOf(it) }
-    val owed = state.accounts.filter { it.kind == AccountKind.CARD }.sumOf { state.balanceOf(it) }.coerceAtMost(0)
+    val dues = state.dues()
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        ScreenTitle("Where your money sits", "Wallets")
+        ScreenTitle("Everything that repeats", "Plans")
 
-        HeroCard {
-            Column {
-                Text("TOTAL BALANCE", color = Color.White.copy(alpha = .78f), fontSize = 11.sp, letterSpacing = 1.sp)
-                Text(signedRupees(total), color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
-                if (owed < 0) Text("Cards owe ${rupees(-owed).removeSuffix(".00")}", color = Color.White.copy(alpha = .85f), fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-                Text(
-                    "Balances count from your tracking start date, plus the balance you enter for each wallet.",
-                    color = Color.White.copy(alpha = .7f), fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-        }
-
-        SectionTitle("Your wallets")
-        state.accounts.forEach { a ->
-            val mine = state.txns.filter { it.accountId == a.id && it.epochDay >= monthStart }
-            val out = mine.filter { it.type == TxnType.DEBIT }.sumOf { it.amountPaise }
-            val inn = mine.filter { it.type == TxnType.CREDIT }.sumOf { it.amountPaise }
-            Card(Modifier.clickable { editing = a }) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Box(Modifier.size(46.dp).clip(RoundedCornerShape(16.dp)).background(Color(a.color).copy(alpha = .25f)), contentAlignment = Alignment.Center) {
-                        Text(a.kind.emoji, fontSize = 22.sp)
-                    }
+        // Repeats
+        SectionTitle("Repeats every month")
+        if (state.repeats.isEmpty()) Text("EMIs, loans, rent, SIPs, insurance, tithe or salary: add each once and you get reminders and a truer safe-to-spend.", color = Pal.muted, fontSize = 13.sp)
+        dues.forEach { d ->
+            val r = d.repeat
+            Card(Modifier.clickable { repeatEditing = r }) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(repeatEmoji(r.rtype), fontSize = 24.sp)
                     Column(Modifier.weight(1f)) {
-                        Text(a.name, color = Pal.fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Text("This month  −${rupees(out).removeSuffix(".00")}  ·  +${rupees(inn).removeSuffix(".00")}", color = Pal.muted, fontSize = 12.sp)
+                        Text(r.title, color = Pal.fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "${r.rtype} · day ${r.dayOfMonth} of every month" + (if (r.pct > 0) " · ${r.pct}% of income" else "") +
+                                if (d.paid) " · paid this month ✓" else "",
+                            color = if (d.paid) Pal.good else Pal.muted, fontSize = 12.sp,
+                        )
                     }
-                    Text(signedRupees(state.balanceOf(a)), color = if (state.balanceOf(a) < 0) Pal.bad else Pal.fg, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text((if (r.type == TxnType.DEBIT) "−" else "+") + rupees(d.amountPaise).removeSuffix(".00"), color = if (r.type == TxnType.DEBIT) Pal.fg else Pal.good, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
-        AddButton("＋ Add a wallet") { adding = true }
+        AddButton("＋ New repeat") { repeatNew = true }
 
-        MoneyCalendarCard(state)
-        SubscriptionRadarCard(state)
+        // Investments
+        SectionTitle("Investments")
+        val invested = state.investments.sumOf { it.investedPaise }
+        val worth = state.investments.sumOf { if (it.valuePaise > 0) it.valuePaise else it.investedPaise }
+        if (state.investments.isEmpty()) Text("Note down your SIPs, stocks, gold or FDs to see what you put in against what it is worth.", color = Pal.muted, fontSize = 13.sp)
+        else Card {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row { Text("Invested", color = Pal.muted, fontSize = 13.sp, modifier = Modifier.weight(1f)); Text(rupees(invested).removeSuffix(".00"), color = Pal.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                Row {
+                    Text("Worth today", color = Pal.muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    val gain = if (invested > 0) Math.round((worth - invested) * 100.0 / invested) else 0L
+                    Text(rupees(worth).removeSuffix(".00") + (if (invested > 0) "  (" + (if (gain >= 0) "+" else "") + gain + "%)" else ""), color = if (worth >= invested) Pal.good else Pal.bad, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        state.investments.forEach { i ->
+            Card(Modifier.clickable { investEditing = i }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(i.name, color = Pal.fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Invested ${rupees(i.investedPaise).removeSuffix(".00")}", color = Pal.muted, fontSize = 12.sp)
+                    }
+                    Text(if (i.valuePaise > 0) rupees(i.valuePaise).removeSuffix(".00") else "—", color = Pal.fg, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        AddButton("＋ New investment") { investNew = true }
 
         // Goals
         SectionTitle("Goals")
@@ -155,22 +169,6 @@ fun WalletsScreen(state: AppState) {
         }
         AddButton("＋ New loan") { loanNew = true }
 
-        // Repeating
-        SectionTitle("Repeats every month")
-        if (state.repeats.isEmpty()) Text("Rent, EMI, SIP or salary: add it once and it appears by itself.", color = Pal.muted, fontSize = 13.sp)
-        state.repeats.forEach { r ->
-            Card(Modifier.clickable { repeatEditing = r }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(r.title, color = Pal.fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Day ${r.dayOfMonth} of every month" + (state.account(r.accountId)?.let { " · ${it.name}" } ?: ""), color = Pal.muted, fontSize = 12.sp)
-                    }
-                    Text((if (r.type == TxnType.DEBIT) "−" else "+") + rupees(r.amountPaise).removeSuffix(".00"), color = if (r.type == TxnType.DEBIT) Pal.fg else Pal.good, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-        AddButton("＋ New repeat") { repeatNew = true }
-
         // Tags
         val monthSpends = state.txns.filter { it.type == TxnType.DEBIT && it.epochDay >= monthStart && it.kind == app.expensetracker.core.TxnKind.NORMAL }
         val byTag = monthSpends.flatMap { t -> state.tagsOf(t).map { it to t.amountPaise } }
@@ -190,9 +188,8 @@ fun WalletsScreen(state: AppState) {
     loanPaying?.let { l -> AmountSheet(if (l.borrowed) "Payment on ${l.name}" else "Repayment for ${l.name}", "Record", { state.addToLoan(l, it) }) { loanPaying = null } }
     if (repeatNew) RepeatSheet(state, null) { repeatNew = false }
     repeatEditing?.let { RepeatSheet(state, it) { repeatEditing = null } }
-
-    if (adding) AccountSheet(state, null) { adding = false }
-    editing?.let { AccountSheet(state, it) { editing = null } }
+    if (investNew) InvestSheet(state, null) { investNew = false }
+    investEditing?.let { InvestSheet(state, it) { investEditing = null } }
 }
 
 @Composable

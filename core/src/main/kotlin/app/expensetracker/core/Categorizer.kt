@@ -7,6 +7,10 @@ object Categorizer {
         Categories.BANK_CHARGES to listOf(
             "charges", "annual fee", "amc", "sms alert", "gst", "penalty", "late fee", "processing fee",
         ),
+        Categories.INVEST to listOf(
+            "groww", "zerodha", "upstox", "kuvera", "smallcase", "indmoney", "mutual fund", "sip", "nps", "ppf",
+            "angel one", "paytm money", "et money", "nippon", "mirae", "motilal", "iccl", "bse star",
+        ),
         "Food" to listOf(
             "swiggy", "zomato", "kitchen", "restaurant", "cafe", "bakery", "hotel", "dominos", "pizza",
             "burger", "icecream", "ice cream", "biryani", "tiffin", "mess", "juice", "tea", "coffee", "sweets",

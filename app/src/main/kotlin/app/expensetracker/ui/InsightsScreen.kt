@@ -41,8 +41,8 @@ fun InsightsScreen(state: AppState, period: Period, anchor: LocalDate, onClose: 
     val summary = Reports.summarize(all, period, anchor)
     val previous = Reports.summarize(all, period, Reports.shift(period, anchor, -1))
     val report = Insights.generate(all, period, anchor, state.budgetPaise)
-    val word = when (period) { Period.WEEK -> "week"; Period.MONTH -> "month"; Period.YEAR -> "year" }
-    val barsTitle = when (period) { Period.WEEK -> "Day by day"; Period.MONTH -> "Week by week"; Period.YEAR -> "Month by month" }
+    val word = when (period) { Period.DAY -> "day"; Period.WEEK -> "week"; Period.MONTH -> "month"; Period.YEAR -> "year" }
+    val barsTitle = when (period) { Period.DAY -> "Last 7 days"; Period.WEEK -> "Day by day"; Period.MONTH -> "Week by week"; Period.YEAR -> "Month by month" }
 
     Column(
         Modifier.fillMaxSize().background(Pal.bg).statusBarsPadding().verticalScroll(rememberScrollState())

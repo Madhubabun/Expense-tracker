@@ -43,6 +43,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".RepeatRemindReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".CatchUpReceiver"
             android:exported="false" />
 

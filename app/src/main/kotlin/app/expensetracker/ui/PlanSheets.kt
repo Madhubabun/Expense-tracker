@@ -149,43 +149,102 @@ fun LoanSheet(state: AppState, editing: Loan?, onDone: () -> Unit) {
     }
 }
 
+val RepeatTypes = listOf("EMI", "Loan", "Mutual fund", "Rent", "Insurance", "Tithe", "Salary", "Other")
+
+fun repeatEmoji(rtype: String) = when (rtype) {
+    "EMI" -> "🏦"; "Loan" -> "🤝"; "Mutual fund" -> "📈"; "Rent" -> "🏡"; "Insurance" -> "🛡️"; "Tithe" -> "🙏"; "Salary" -> "💰"; else -> "🔁"
+}
+
+private fun defaultCategory(rtype: String) = when (rtype) {
+    "EMI", "Loan", "Rent", "Insurance" -> "Bills"
+    "Mutual fund" -> app.expensetracker.core.Categories.INVEST
+    "Salary" -> "Salary"
+    else -> "Other"
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RepeatSheet(state: AppState, editing: Repeat?, onDone: () -> Unit) {
     var title by remember { mutableStateOf(editing?.title ?: "") }
-    var type by remember { mutableStateOf(editing?.type ?: TxnType.DEBIT) }
+    var rtype by remember { mutableStateOf(editing?.rtype ?: "EMI") }
     var amount by remember { mutableStateOf(plain(editing?.amountPaise ?: 0)) }
-    var category by remember { mutableStateOf(editing?.category ?: "Bills") }
-    var accountId by remember { mutableStateOf(editing?.accountId ?: state.cashId) }
+    var percent by remember { mutableStateOf(if ((editing?.pct ?: 0) > 0) editing!!.pct.toString() else "10") }
+    var category by remember { mutableStateOf(editing?.category ?: defaultCategory(rtype)) }
     var day by remember { mutableStateOf((editing?.dayOfMonth ?: LocalDate.now().dayOfMonth).toString()) }
     var confirmDelete by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
     val paise = parseRupees(amount)
+    val pct = percent.trim().toIntOrNull()?.takeIf { it in 1..100 }
     val dom = day.trim().toIntOrNull()?.takeIf { it in 1..31 }
+    val tithe = rtype == "Tithe"
+    val type = if (rtype == "Salary") TxnType.CREDIT else TxnType.DEBIT
 
     AppSheet(onDone) {
         Text(if (editing == null) "New monthly repeat" else "Edit repeat", color = Pal.fg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        OutlinedTextField(title, { title = it }, label = { Text("What is it? (Rent, EMI, Salary…)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Choice("Spent", type == TxnType.DEBIT) { type = TxnType.DEBIT }
-            Choice("Received", type == TxnType.CREDIT) { type = TxnType.CREDIT }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            RepeatTypes.forEach { t ->
+                Choice("${repeatEmoji(t)} $t", rtype == t) {
+                    rtype = t
+                    category = defaultCategory(t)
+                    if (title.isBlank() || title in RepeatTypes) title = if (t == "Other") "" else t
+                }
+            }
         }
-        OutlinedTextField(
-            amount, { amount = it }, label = { Text("Amount (₹)") }, singleLine = true, isError = amount.isNotBlank() && paise == null,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
-        )
+        OutlinedTextField(title, { title = it }, label = { Text("Name (Home loan, Groww SIP, Rent…)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        if (tithe) {
+            OutlinedTextField(
+                percent, { percent = it }, label = { Text("Percent of your monthly income") }, singleLine = true, isError = pct == null,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            OutlinedTextField(
+                amount, { amount = it }, label = { Text(if (type == TxnType.CREDIT) "Expected amount (₹)" else "Amount (₹)") }, singleLine = true, isError = amount.isNotBlank() && paise == null,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+            )
+        }
         OutlinedTextField(
             day, { day = it }, label = { Text("Day of the month (1–31)") }, singleLine = true, isError = dom == null,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
         )
         CategoryPicker(state, category, { category = it }, { creating = true })
-        AccountPicker(state, accountId) { accountId = it }
-        Text("It is added by itself on that day each month. Short months use their last day.", color = Pal.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
-        GradientButton("Save", enabled = title.isNotBlank() && paise != null && paise > 0 && dom != null) {
-            state.saveRepeat(editing, title, paise!!, type, category, accountId, dom!!); onDone()
+        Text(
+            "You get a reminder at 9 am the day before and on the day. When the bank message arrives it is matched to this repeat and counted once. Short months use their last day.",
+            color = Pal.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp),
+        )
+        GradientButton("Save", enabled = title.isNotBlank() && dom != null && (if (tithe) pct != null else (paise != null && paise > 0))) {
+            state.saveRepeat(editing, title, if (tithe) 0 else paise!!, type, category, editing?.accountId ?: 0, dom!!, rtype, if (tithe) pct!! else 0); onDone()
         }
         if (editing != null) TextButton(onClick = { if (confirmDelete) { state.deleteRepeat(editing); onDone() } else confirmDelete = true }) {
-            Text(if (confirmDelete) "Tap again: past entries stay" else "Delete repeat", color = Pal.bad)
+            Text(if (confirmDelete) "Tap again to delete" else "Delete repeat", color = Pal.bad)
         }
     }
     if (creating) NewCategorySheet(state, onDone = { n -> if (n != null) category = n; creating = false })
+}
+
+@Composable
+fun InvestSheet(state: AppState, editing: app.expensetracker.data.Investment?, onDone: () -> Unit) {
+    var name by remember { mutableStateOf(editing?.name ?: "") }
+    var invested by remember { mutableStateOf(plain(editing?.investedPaise ?: 0)) }
+    var value by remember { mutableStateOf(plain(editing?.valuePaise ?: 0)) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val inPaise = parseRupees(invested, blankIsZero = true)
+    val valPaise = parseRupees(value, blankIsZero = true)
+    AppSheet(onDone) {
+        Text(if (editing == null) "New investment" else "Edit investment", color = Pal.fg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        OutlinedTextField(name, { name = it }, label = { Text("Name (Groww SIP, Gold, FD…)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            invested, { invested = it }, label = { Text("Invested so far (₹)") }, singleLine = true, isError = inPaise == null,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value, { value = it }, label = { Text("Worth today (₹, optional)") }, singleLine = true, isError = valPaise == null,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+        )
+        GradientButton("Save", enabled = name.isNotBlank() && inPaise != null && valPaise != null) {
+            state.saveInvestment(editing, name, inPaise!!, valPaise!!); onDone()
+        }
+        if (editing != null) TextButton(onClick = { if (confirmDelete) { state.deleteInvestment(editing); onDone() } else confirmDelete = true }) {
+            Text(if (confirmDelete) "Tap again to delete" else "Delete", color = Pal.bad)
+        }
+    }
 }

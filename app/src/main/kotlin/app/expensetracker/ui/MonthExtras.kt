@@ -72,8 +72,6 @@ fun MonthExtras(state: AppState, byCategory: List<CategoryTotal>, today: LocalDa
         }
     }
 
-    PersonaCard(state)
-    WhatIfCard(state)
     val bills = state.bills()
     if (bills.isNotEmpty()) {
         SectionTitle("Upcoming bills")

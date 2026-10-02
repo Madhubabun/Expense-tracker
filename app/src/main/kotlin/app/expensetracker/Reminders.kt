@@ -13,7 +13,7 @@ object Reminders {
         val am = context.getSystemService(AlarmManager::class.java)
         // Already armed: setting them again on every launch would keep pushing the next run back.
         fun armed(code: Int, target: Class<*>) = PendingIntent.getBroadcast(context, code, Intent(context, target), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE) != null
-        if (armed(77, DailyReceiver::class.java) && armed(78, CatchUpReceiver::class.java)) return
+        if (armed(77, DailyReceiver::class.java) && armed(78, CatchUpReceiver::class.java) && armed(79, RepeatRemindReceiver::class.java)) return
         val pending = PendingIntent.getBroadcast(
             context, 77, Intent(context, DailyReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -27,7 +27,28 @@ object Reminders {
         val scan = PendingIntent.getBroadcast(
             context, 78, Intent(context, CatchUpReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        val morning = PendingIntent.getBroadcast(
+            context, 79, Intent(context, RepeatRemindReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val nineAm = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 9); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DAY_OF_YEAR, 1)
+        }
+        am.setInexactRepeating(AlarmManager.RTC_WAKEUP, nineAm.timeInMillis, AlarmManager.INTERVAL_DAY, morning)
         am.setInexactRepeating(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + AlarmManager.INTERVAL_FIFTEEN_MINUTES, AlarmManager.INTERVAL_FIFTEEN_MINUTES, scan)
+    }
+}
+
+/** 9 am each day: reminders for repeats due today or tomorrow. */
+class RepeatRemindReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val pending = goAsync()
+        Thread {
+            try {
+                runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) }
+                runCatching { Alerts.repeatReminders(context) }
+            } finally { pending.finish() }
+        }.start()
     }
 }
 

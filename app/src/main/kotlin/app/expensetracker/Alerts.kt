@@ -137,6 +137,22 @@ object Alerts {
         }
     }
 
+    /** 9 am: the day before a repeat is due, and again on the day, unless its bank debit already arrived. */
+    fun repeatReminders(context: Context) {
+        if (!Prefs.flag(context, Prefs.REPEAT_REMINDERS, true)) return
+        val today = LocalDate.now()
+        app.expensetracker.data.Plans.upcoming(context, today, 1).filter { it.repeat.type == TxnType.DEBIT || it.repeat.rtype == "Salary" }.forEach { d ->
+            val whenText = when {
+                d.day == today -> "today"
+                d.day == today.plusDays(1) -> "tomorrow"
+                else -> "overdue"
+            }
+            if (whenText == "overdue") return@forEach
+            val verb = if (d.repeat.type == TxnType.DEBIT) "due" else "expected"
+            post(context, 7600 + (d.repeat.id % 400).toInt() * 2 + (if (d.day == today) 0 else 1), CH_REMIND, "${d.repeat.title} $verb $whenText", "${money(d.amountPaise)}")
+        }
+    }
+
     /** Bills are spotted from all history, including older spends that are hidden from the screens. */
     fun detectBills(context: Context, today: Long) = Recurring.detect(
         Db.get(context).all().filter { it.type == TxnType.DEBIT && it.kind == TxnKind.NORMAL && !it.merchant.isNullOrBlank() }

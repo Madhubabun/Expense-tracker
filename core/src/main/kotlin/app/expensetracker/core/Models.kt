@@ -17,6 +17,9 @@ object Categories {
 
     /** Money taken out of an ATM. It moves into the Cash wallet, so it is not spending until you spend the cash. */
     const val CASH = "Cash withdrawal"
+
+    /** SIPs, mutual funds and stocks. Money you keep, so it is shown as "Invested" and not as spending. */
+    const val INVEST = "Investments"
     const val UNCATEGORIZED = ""
 
     /** Categories that ship with the app. Colours are ARGB. People add their own on top of these. */
@@ -34,6 +37,7 @@ object Categories {
         Builtin("Salary", "💰", 0xFF5CE08A),
         Builtin(TRANSFER, "🔁", 0xFF8F8DA2),
         Builtin(CASH, "🏧", 0xFF5CE08A),
+        Builtin(INVEST, "📈", 0xFF4DA3FF),
         Builtin(CARD_BILL, "💳", 0xFF8F8DA2),
         Builtin("Other", "🧾", 0xFFB0AEC4),
     )
@@ -41,7 +45,7 @@ object Categories {
     val defaults = builtins.map { it.name }
 
     /** Categories that are left out of spending and income totals. */
-    val excludedFromTotals = setOf(TRANSFER, CARD_BILL, CASH)
+    val excludedFromTotals = setOf(TRANSFER, CARD_BILL, CASH, INVEST)
 }
 
 data class ParsedTxn(

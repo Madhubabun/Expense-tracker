@@ -17,7 +17,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.expensetracker.core.Categories
-import app.expensetracker.core.MoneyCalendar
 import app.expensetracker.core.TxnKind
 import app.expensetracker.core.TxnType
 import app.expensetracker.core.WhatIf
@@ -63,51 +62,36 @@ fun SubscriptionRadarCard(state: AppState) {
     }
 }
 
-/** What the next 30 days look like: bills and repeats on their dates, and the lowest the balance is expected to fall. */
+/** Repeats due in the next 30 days, and whether what is left this month covers them. */
 @Composable
 fun MoneyCalendarCard(state: AppState) {
     val today = LocalDate.now()
-    val todayDay = today.toEpochDay()
-    val days = 30
-    val start = state.accounts.filter { it.kind != AccountKind.CARD }.sumOf { state.balanceOf(it) }
-    val events = MoneyCalendar.billEvents(state.subscriptions, todayDay, days) + state.repeats.flatMap { r ->
-        (0..1).mapNotNull { m ->
-            val month = today.plusMonths(m.toLong())
-            val d = month.withDayOfMonth(r.dayOfMonth.coerceAtMost(month.lengthOfMonth())).toEpochDay()
-            if (d in (todayDay + 1)..(todayDay + days)) app.expensetracker.core.CalendarEvent(d, r.title, if (r.type == TxnType.DEBIT) -r.amountPaise else r.amountPaise) else null
-        }
-    }
-    val recent = state.txns.filter { it.type == TxnType.DEBIT && it.kind == TxnKind.NORMAL && it.category !in Categories.excludedFromTotals && it.epochDay > todayDay - 30 }
-    val regular = state.subscriptions.sumOf { it.amountPaise * 30 / it.everyDays.coerceAtLeast(1) } + state.repeats.filter { it.type == TxnType.DEBIT }.sumOf { it.amountPaise }
-    val perDay = ((recent.sumOf { it.amountPaise } - regular) / 30).coerceAtLeast(0)
-    val line = MoneyCalendar.project(start, todayDay, days, perDay, events)
-    val low = line.minByOrNull { it.balancePaise }
-
+    val due = state.upcoming(30)
+    val out = due.filter { it.repeat.type == TxnType.DEBIT }.sumOf { it.amountPaise }
     SectionTitle("Next 30 days")
     Card {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (low != null) {
+            if (due.isEmpty()) {
+                Text("No repeats are due. Add EMIs, rent and SIPs in Plans to see them here.", color = Pal.muted, fontSize = 13.sp)
+            } else {
+                Text("${short(out)} going out across ${due.size} ${if (due.size == 1) "repeat" else "repeats"}", color = Pal.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                val left = state.safe.leftPaise
                 Text(
-                    "Lowest balance ${signedRupees(low.balancePaise)} on ${LocalDate.ofEpochDay(low.day).format(dayFormat)}",
-                    color = if (low.balancePaise < 0) Pal.bad else Pal.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    if (left >= 0) "You have ${short(left)} left to spend this month after the repeats still to pay."
+                    else "You are ${short(-left)} short this month once the repeats still to pay are counted.",
+                    color = if (left >= 0) Pal.muted else Pal.bad, fontSize = 12.sp,
                 )
-                Text("Assumes about ${short(perDay)} of everyday spending a day, like the last 30 days.", color = Pal.muted, fontSize = 12.sp)
-            }
-            line.filter { it.events.isNotEmpty() }.take(8).forEach { p ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(p.events.joinToString(", ") { it.label }, color = Pal.fg, fontSize = 14.sp, maxLines = 1)
-                        Text(LocalDate.ofEpochDay(p.day).format(dayFormat), color = Pal.muted, fontSize = 12.sp)
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        val delta = p.events.sumOf { it.deltaPaise }
-                        Text((if (delta < 0) "−" else "+") + short(kotlin.math.abs(delta)), color = if (delta < 0) Pal.fg else Pal.good, fontSize = 14.sp)
-                        Text("→ ${signedRupees(p.balancePaise)}", color = Pal.muted, fontSize = 12.sp)
+                due.take(10).forEach { d ->
+                    val days = d.day.toEpochDay() - today.toEpochDay()
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("${repeatEmoji(d.repeat.rtype)}  ${d.repeat.title}", color = Pal.fg, fontSize = 14.sp, maxLines = 1)
+                            Text(if (d.overdue) "overdue since ${d.day.format(dayFormat)}" else d.day.format(dayFormat) + if (days > 1) " · in $days days" else "", color = if (d.overdue) Pal.bad else Pal.muted, fontSize = 12.sp)
+                        }
+                        Text((if (d.repeat.type == TxnType.DEBIT) "−" else "+") + short(d.amountPaise), color = if (d.repeat.type == TxnType.DEBIT) Pal.fg else Pal.good, fontSize = 14.sp)
                     }
                 }
             }
-            if (line.none { it.events.isNotEmpty() }) Text("No bills or repeats are due. Add rent, EMIs or salary under Repeats to see them here.", color = Pal.muted, fontSize = 12.sp)
-            if (state.accounts.all { it.openingPaise == 0L }) Text("Tip: enter each wallet's current balance so this is accurate.", color = Pal.accent, fontSize = 12.sp)
         }
     }
 }

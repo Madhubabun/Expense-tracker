@@ -203,6 +203,8 @@ fun TxnRow(state: AppState, t: Txn, onEdit: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     val time = timeText(t.atMillis)
                     if (time.isNotEmpty()) Text(time, color = p.muted, fontSize = 12.sp)
+                    // A small label for which bank account or wallet it belongs to, once there is more than one.
+                    state.account(t.accountId)?.takeIf { state.accounts.size > 1 }?.let { Text("· " + it.name, color = p.muted, fontSize = 12.sp, maxLines = 1) }
                     if (t.id in state.repeatPairs) {
                         Text(
                             "Repeat?", color = p.bad, fontSize = 11.sp, fontWeight = FontWeight.Medium,

@@ -5,7 +5,7 @@ import java.time.format.TextStyle
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 
-enum class Period { WEEK, MONTH, YEAR }
+enum class Period { DAY, WEEK, MONTH, YEAR }
 
 data class ReportTxn(
     val amountPaise: Long,
@@ -34,6 +34,8 @@ data class Summary(
     /** Spending per category, largest first. Uncategorized spending shows up as "Uncategorized". */
     val byCategory: List<CategoryTotal>,
     val txnCount: Int,
+    /** Money put into investments (SIPs, mutual funds, stocks) in the range. Not counted as spending. */
+    val investedPaise: Long = 0,
 )
 
 object Reports {
@@ -44,6 +46,7 @@ object Reports {
      * WEEK is the 7 days ending on [anchor], so this week is always comparable with last week.
      */
     fun range(period: Period, anchor: LocalDate): Pair<LocalDate, LocalDate> = when (period) {
+        Period.DAY -> anchor to anchor
         Period.WEEK -> anchor.minusDays(6) to anchor
         Period.MONTH -> anchor.withDayOfMonth(1).let { it to it.with(TemporalAdjusters.lastDayOfMonth()) }
         Period.YEAR -> LocalDate.of(anchor.year, 1, 1) to LocalDate.of(anchor.year, 12, 31)
@@ -55,6 +58,7 @@ object Reports {
 
     /** Moves [anchor] by [steps] periods (negative goes back). */
     fun shift(period: Period, anchor: LocalDate, steps: Long): LocalDate = when (period) {
+        Period.DAY -> anchor.plusDays(steps)
         Period.WEEK -> anchor.plusDays(steps * 7)
         Period.MONTH -> anchor.plusMonths(steps)
         Period.YEAR -> anchor.plusYears(steps)
@@ -66,6 +70,12 @@ object Reports {
         val debits = inRange.filter { it.type == TxnType.DEBIT }
 
         val bars = when (period) {
+            // A single day has no parts, so show it against the six days before it.
+            Period.DAY -> (6 downTo 0).map { i ->
+                val d = anchor.minusDays(i.toLong())
+                val total = txns.filter { it.countable && it.type == TxnType.DEBIT && it.date == d }.sumOf { it.amountPaise }
+                Bar(d.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH), total)
+            }
             Period.WEEK -> (0..6).map { i ->
                 val d = start.plusDays(i.toLong())
                 Bar(d.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH), debits.filter { it.date == d }.sumOf { it.amountPaise })
@@ -95,6 +105,9 @@ object Reports {
             bars = bars,
             byCategory = byCategory,
             txnCount = inRange.size,
+            investedPaise = txns.filter {
+                it.kind == TxnKind.NORMAL && it.category == Categories.INVEST && it.type == TxnType.DEBIT && !it.date.isBefore(start) && !it.date.isAfter(end)
+            }.sumOf { it.amountPaise },
         )
     }
 

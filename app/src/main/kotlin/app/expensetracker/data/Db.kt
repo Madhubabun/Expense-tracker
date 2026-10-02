@@ -62,7 +62,7 @@ data class Category(val name: String, val emoji: String, val color: Long, val im
 
 /** All data lives in this one SQLite file on the phone. Nothing is sent anywhere. */
 class Db private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 10) {
+    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 11) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -132,6 +132,13 @@ class Db private constructor(context: Context) :
         }
         if (oldVersion < 7) createWordCategories(db)
         if (oldVersion < 8) db.execSQL("ALTER TABLE txn ADD COLUMN pair_state INTEGER NOT NULL DEFAULT 0")
+        if (oldVersion < 11) {
+            Plans.createInvest(db)
+            db.execSQL("ALTER TABLE repeat_txn ADD COLUMN rtype TEXT NOT NULL DEFAULT 'Other'")
+            db.execSQL("ALTER TABLE repeat_txn ADD COLUMN pct INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE repeat_txn ADD COLUMN paid_month INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("INSERT OR IGNORE INTO category(name, emoji, color, image, builtin, sort) VALUES (?, ?, ?, NULL, 1, 98)", arrayOf(Categories.INVEST, "📈", 0xFF4DA3FF))
+        }
         if (oldVersion < 10) {
             db.execSQL("INSERT OR IGNORE INTO category(name, emoji, color, image, builtin, sort) VALUES (?, ?, ?, NULL, 1, 99)", arrayOf(Categories.CASH, "🏧", 0xFF5CE08A))
         }

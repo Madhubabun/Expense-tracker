@@ -63,6 +63,7 @@ fun AlertsCard() {
             FlagRow("Budget alerts", "A nudge at 80% and again at 100%", Prefs.BUDGET_ALERTS, true)
             FlagRow("Unusual spends", "A heads-up when a spend is far bigger than normal", Prefs.UNUSUAL_ALERTS, true)
             FlagRow("9 pm summary", "Today's total and what still needs a category", Prefs.NIGHTLY_SUMMARY, true)
+            FlagRow("Repeat reminders", "9 am the day before and on the day an EMI, rent or SIP is due", Prefs.REPEAT_REMINDERS, true)
             FlagRow("Bill reminders", "The day before a monthly bill is due", Prefs.BILL_REMINDERS, true)
             val context = LocalContext.current
             val power = context.getSystemService(android.os.PowerManager::class.java)

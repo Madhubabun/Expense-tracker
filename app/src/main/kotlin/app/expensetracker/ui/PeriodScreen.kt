@@ -46,41 +46,28 @@ private fun Txn.countsTowardSpend() = kind == TxnKind.NORMAL && category !in Cat
 
 /** Week, month and year views. Same layout, different range. */
 @Composable
-fun PeriodScreen(state: AppState, period: Period, onInsights: (Period, LocalDate) -> Unit, onEdit: (Txn) -> Unit) {
+fun PeriodScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period) -> Unit, onOffset: (Int) -> Unit, onInsights: (Period, LocalDate) -> Unit, onEdit: (Txn) -> Unit) {
     val today = LocalDate.now()
-    var offset by rememberSaveable(period) { mutableStateOf(0) }
     var calendar by rememberSaveable { mutableStateOf(false) }
     val anchor = Reports.shift(period, today, offset.toLong())
     val all = state.reportTxns()
     val summary = Reports.summarize(all, period, anchor)
     val previous = Reports.summarize(all, period, Reports.shift(period, anchor, -1))
     val change = Reports.percentChange(summary.spentPaise, previous.spentPaise)
-    val compareLabel = when (period) { Period.WEEK -> "last week"; Period.MONTH -> "last month"; Period.YEAR -> "last year" }
+    val compareLabel = when (period) { Period.DAY -> "yesterday"; Period.WEEK -> "last week"; Period.MONTH -> "last month"; Period.YEAR -> "last year" }
 
-    val title = when (period) {
-        Period.WEEK -> if (offset == 0) "This week" else "Week"
-        Period.MONTH -> anchor.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH)
-        Period.YEAR -> anchor.year.toString()
-    }
-    val range = when (period) {
-        Period.YEAR -> "Jan – Dec"
-        else -> "${summary.start.format(dayMonth)} – ${summary.end.format(dayMonth)} ${summary.end.year}"
-    }
     val inRange = state.txns.filter { val d = LocalDate.ofEpochDay(it.epochDay); !d.isBefore(summary.start) && !d.isAfter(summary.end) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        ScreenTitle(range, title) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StepButton("‹") { offset-- }
-                StepButton("›", enabled = offset < 0) { offset++ }
-            }
-        }
+        ScreenTitle("Money out", "Expenses")
+        PeriodBar(period, offset, onPeriod, onOffset)
 
         if (summary.txnCount == 0) {
             val (emoji, head, text) = when (period) {
+                Period.DAY -> Triple("🫧", "Nothing spent this day", "Your wallet is chilling. Enjoy the quiet.")
                 Period.WEEK -> Triple("🌤️", "Nothing this week", "Suspiciously disciplined. Your bank balance approves.")
                 Period.MONTH -> Triple("🌱", "A clean slate", "No spends this month yet. Future you says thanks.")
                 Period.YEAR -> Triple("🗓️", "No spends this year", "Bold move. Add one and we’ll start the story.")
@@ -105,6 +92,7 @@ fun PeriodScreen(state: AppState, period: Period, onInsights: (Period, LocalDate
                     }
                 }
                 val highlight = when (period) {
+                    Period.DAY -> summary.bars.lastIndex
                     Period.WEEK -> summary.bars.lastIndex
                     Period.MONTH -> if (offset == 0) (today.dayOfMonth - 1) / 7 else summary.bars.lastIndex
                     Period.YEAR -> if (offset == 0) today.monthValue - 1 else 11
@@ -128,7 +116,7 @@ fun PeriodScreen(state: AppState, period: Period, onInsights: (Period, LocalDate
 
         IncomeVsSpending(summary.spentPaise, summary.receivedPaise)
 
-        SectionTitle(when (period) { Period.WEEK -> "Spending by day"; Period.MONTH -> "Spending by week"; Period.YEAR -> "Spending by month" })
+        SectionTitle(when (period) { Period.DAY -> "Last 7 days"; Period.WEEK -> "Spending by day"; Period.MONTH -> "Spending by week"; Period.YEAR -> "Spending by month" })
         Card { SpendChart(summary.bars) }
 
         Card(Modifier.clickable { onInsights(period, anchor) }) {
@@ -203,7 +191,7 @@ private fun StepButton(label: String, enabled: Boolean = true, onClick: () -> Un
 
 /** Two bars: what came in against what went out, and what is left. */
 @Composable
-private fun IncomeVsSpending(spent: Long, received: Long) {
+internal fun IncomeVsSpending(spent: Long, received: Long) {
     if (spent == 0L && received == 0L) return
     val top = maxOf(spent, received).coerceAtLeast(1).toFloat()
     val net = received - spent

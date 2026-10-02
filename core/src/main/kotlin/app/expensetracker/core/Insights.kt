@@ -32,8 +32,8 @@ object Insights {
     ): InsightReport {
         val cur = Reports.summarize(txns, period, anchor)
         val prev = Reports.summarize(txns, period, Reports.shift(period, anchor, -1))
-        val word = when (period) { Period.WEEK -> "week"; Period.MONTH -> "month"; Period.YEAR -> "year" }
-        val perYear = when (period) { Period.WEEK -> 52L; Period.MONTH -> 12L; Period.YEAR -> 1L }
+        val word = when (period) { Period.DAY -> "day"; Period.WEEK -> "week"; Period.MONTH -> "month"; Period.YEAR -> "year" }
+        val perYear = when (period) { Period.DAY -> 365L; Period.WEEK -> 52L; Period.MONTH -> 12L; Period.YEAR -> 1L }
         val debits = txns.filter { it.countable && it.type == TxnType.DEBIT && !it.date.isBefore(cur.start) && !it.date.isAfter(cur.end) }
         val out = mutableListOf<Insight>()
 

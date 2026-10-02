@@ -15,7 +15,7 @@ import java.io.File
  */
 object Backup {
     private const val VERSION = 1
-    private val TABLES = listOf("txn", "category", "merchant_category", "category_budget", "account", "goal", "loan", "repeat_txn", "word_category")
+    private val TABLES = listOf("txn", "category", "merchant_category", "category_budget", "account", "goal", "loan", "repeat_txn", "word_category", "invest")
 
     fun export(context: Context): String {
         val db = Db.get(context).database()
