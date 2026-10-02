@@ -78,14 +78,16 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
 
     // Soft colour glows sit behind everything so the glass cards have something to frost.
     val glow = if (Pal.dark) .30f else .16f
+    val glowAccent = Pal.accent
+    val glowPink = Pal.pink
     Scaffold(
         modifier = Modifier.background(Pal.bg).drawBehind {
             drawCircle(
-                Brush.radialGradient(listOf(Pal.accent.copy(alpha = glow), Color.Transparent), center = Offset(size.width * .95f, size.height * .1f), radius = size.width * .9f),
+                Brush.radialGradient(listOf(glowAccent.copy(alpha = glow), Color.Transparent), center = Offset(size.width * .95f, size.height * .1f), radius = size.width * .9f),
                 radius = size.width * .9f, center = Offset(size.width * .95f, size.height * .1f),
             )
             drawCircle(
-                Brush.radialGradient(listOf(Pal.pink.copy(alpha = glow * .8f), Color.Transparent), center = Offset(size.width * .05f, size.height * .75f), radius = size.width * .8f),
+                Brush.radialGradient(listOf(glowPink.copy(alpha = glow * .8f), Color.Transparent), center = Offset(size.width * .05f, size.height * .75f), radius = size.width * .8f),
                 radius = size.width * .8f, center = Offset(size.width * .05f, size.height * .75f),
             )
         },
