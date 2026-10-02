@@ -15,6 +15,11 @@ import app.expensetracker.data.AccountKind
 import app.expensetracker.data.CategoryImages
 import app.expensetracker.data.Category
 import app.expensetracker.data.Db
+import app.expensetracker.data.Goal
+import app.expensetracker.data.Loan
+import app.expensetracker.data.Plans
+import app.expensetracker.data.Receipts
+import app.expensetracker.data.Repeat
 import app.expensetracker.data.Prefs
 import app.expensetracker.data.Txn
 import java.time.LocalDate
@@ -44,9 +49,17 @@ class AppState(private val context: Context) {
     var accounts by mutableStateOf<List<Account>>(emptyList())
         private set
 
+    var goals by mutableStateOf<List<Goal>>(emptyList())
+        private set
+    var loans by mutableStateOf<List<Loan>>(emptyList())
+        private set
+    var repeats by mutableStateOf<List<Repeat>>(emptyList())
+        private set
+
     private val images = HashMap<String, Bitmap?>()
 
     init {
+        runCatching { Plans.applyRepeats(context) }
         refresh()
     }
 
@@ -57,12 +70,16 @@ class AppState(private val context: Context) {
         categories = db.categories()
         categoryBudgets = db.categoryBudgets()
         accounts = db.accounts()
+        goals = Plans.goals(context)
+        loans = Plans.loans(context)
+        repeats = Plans.repeats(context)
         runCatching { app.expensetracker.TodayWidget.refresh(context) }
     }
 
     /** Call after a restore: everything on disk changed underneath us. */
     fun reloadAll() {
         images.clear()
+        runCatching { Plans.applyRepeats(context) }
         startDay = Prefs.startDay(context)
         budgetPaise = Prefs.budgetPaise(context)
         refresh()
@@ -91,9 +108,10 @@ class AppState(private val context: Context) {
 
     val needsCategory: List<Txn> get() = txns.filter { it.category.isEmpty() && it.kind == TxnKind.NORMAL }
 
-    fun save(id: Long, category: String, comment: String, accountId: Long? = null) {
+    fun save(id: Long, category: String, comment: String, accountId: Long? = null, tags: String? = null) {
         db.setCategoryAndComment(id, category, comment)
         if (accountId != null) db.setTxnAccount(id, accountId)
+        if (tags != null) db.setTags(id, tags)
         refresh()
         runCatching { app.expensetracker.Alerts.checkBudgets(context) }
     }
@@ -103,8 +121,8 @@ class AppState(private val context: Context) {
         refresh()
     }
 
-    fun addManual(amountPaise: Long, type: TxnType, day: LocalDate, category: String, comment: String, accountId: Long = db.cashAccountId()) {
-        db.insertManual(amountPaise, type, day.toEpochDay(), category, comment, null, accountId)
+    fun addManual(amountPaise: Long, type: TxnType, day: LocalDate, category: String, comment: String, accountId: Long = db.cashAccountId(), tags: String = "") {
+        db.insertManual(amountPaise, type, day.toEpochDay(), category, comment, null, accountId, tags)
         refresh()
         runCatching { app.expensetracker.Alerts.checkBudgets(context) }
     }
@@ -158,4 +176,52 @@ class AppState(private val context: Context) {
     }
 
     val cashId: Long get() = accounts.firstOrNull { it.kind == AccountKind.CASH }?.id ?: 0L
+
+    // Tags
+
+    fun tagsOf(t: Txn): List<String> = t.tags.split(',').filter { it.isNotBlank() }
+
+    val allTags: List<String> get() = txns.flatMap { tagsOf(it) }.distinct().sorted()
+
+    // Receipts
+
+    private val receiptCache = HashMap<String, Bitmap?>()
+
+    fun receiptImage(file: String): Bitmap? = receiptCache.getOrPut(file) { Receipts.load(context, file) }
+
+    /** Replaces the receipt of a spend with the picture at [uri], or removes it when [uri] is null. Returns the new file name. */
+    fun setReceipt(t: Txn, uri: android.net.Uri?): String? {
+        val file = uri?.let { Receipts.save(context, it) }
+        if (uri != null && file == null) return t.receipt
+        t.receipt?.let { receiptCache.remove(it); Receipts.delete(context, it) }
+        db.setReceipt(t.id, file)
+        refresh()
+        return file
+    }
+
+    // Goals, loans and repeating transactions
+
+    fun saveGoal(g: Goal?, name: String, emoji: String, savings: Boolean, target: Long, saved: Long, endDay: Long) {
+        Plans.saveGoal(context, g?.id, name.trim(), emoji, savings, target, saved, endDay); refresh()
+    }
+
+    fun addToGoal(g: Goal, paise: Long) { Plans.addToGoal(context, g.id, paise); refresh() }
+
+    fun deleteGoal(g: Goal) { Plans.deleteGoal(context, g.id); refresh() }
+
+    fun saveLoan(l: Loan?, name: String, borrowed: Boolean, total: Long, paid: Long, dueDay: Long) {
+        Plans.saveLoan(context, l?.id, name.trim(), borrowed, total, paid, dueDay); refresh()
+    }
+
+    fun addToLoan(l: Loan, paise: Long) { Plans.addToLoan(context, l.id, paise); refresh() }
+
+    fun deleteLoan(l: Loan) { Plans.deleteLoan(context, l.id); refresh() }
+
+    fun saveRepeat(r: Repeat?, title: String, amount: Long, type: TxnType, category: String, accountId: Long, day: Int) {
+        Plans.saveRepeat(context, r?.id, title.trim(), amount, type, category, accountId, day)
+        Plans.applyRepeats(context)
+        refresh()
+    }
+
+    fun deleteRepeat(r: Repeat) { Plans.deleteRepeat(context, r.id); refresh() }
 }

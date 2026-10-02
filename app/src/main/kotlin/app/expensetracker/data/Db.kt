@@ -28,6 +28,10 @@ data class Txn(
     val source: String,
     /** The wallet this belongs to, or 0 for none. */
     val accountId: Long = 0,
+    /** Comma separated tags, lowercase, for example "trip,work". */
+    val tags: String = "",
+    /** File name of an attached receipt photo, if any. */
+    val receipt: String? = null,
 )
 
 enum class AccountKind(val label: String, val emoji: String) {
@@ -52,7 +56,7 @@ data class Category(val name: String, val emoji: String, val color: Long, val im
 
 /** All data lives in this one SQLite file on the phone. Nothing is sent anywhere. */
 class Db private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 4) {
+    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 5) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -71,6 +75,8 @@ class Db private constructor(context: Context) :
                 comment TEXT NOT NULL DEFAULT '',
                 source TEXT NOT NULL,
                 account_id INTEGER NOT NULL DEFAULT 0,
+                tags TEXT NOT NULL DEFAULT '',
+                receipt TEXT,
                 dedup TEXT UNIQUE,
                 created_at INTEGER NOT NULL
             )""",
@@ -81,6 +87,7 @@ class Db private constructor(context: Context) :
         createCategories(db)
         createCategoryBudgets(db)
         createAccounts(db)
+        Plans.createTables(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -106,6 +113,13 @@ class Db private constructor(context: Context) :
                 )
             }
         }
+        if (oldVersion < 5) upgradeToV5(db)
+    }
+
+    private fun upgradeToV5(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE txn ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE txn ADD COLUMN receipt TEXT")
+        Plans.createTables(db)
     }
 
     private fun createAccounts(db: SQLiteDatabase) {
@@ -192,6 +206,14 @@ class Db private constructor(context: Context) :
         if (id == cashAccountId()) return
         writableDatabase.execSQL("UPDATE txn SET account_id = 0 WHERE account_id = ?", arrayOf(id))
         writableDatabase.delete("account", "id = ?", arrayOf(id.toString()))
+    }
+
+    fun setTags(txnId: Long, tags: String) {
+        writableDatabase.execSQL("UPDATE txn SET tags = ? WHERE id = ?", arrayOf(tags, txnId))
+    }
+
+    fun setReceipt(txnId: Long, file: String?) {
+        writableDatabase.execSQL("UPDATE txn SET receipt = ? WHERE id = ?", arrayOf<Any?>(file, txnId))
     }
 
     fun setTxnAccount(txnId: Long, accountId: Long) {
@@ -311,6 +333,7 @@ class Db private constructor(context: Context) :
         comment: String,
         merchant: String?,
         accountId: Long = cashAccountId(),
+        tags: String = "",
     ): Long {
         val values = ContentValues().apply {
             put("amount_paise", amountPaise)
@@ -324,6 +347,7 @@ class Db private constructor(context: Context) :
             put("comment", comment)
             put("source", "manual")
             put("account_id", accountId)
+            put("tags", tags)
             put("created_at", System.currentTimeMillis())
         }
         return writableDatabase.insert("txn", null, values)
@@ -398,6 +422,8 @@ class Db private constructor(context: Context) :
         comment = getString(getColumnIndexOrThrow("comment")),
         source = getString(getColumnIndexOrThrow("source")),
         accountId = getLong(getColumnIndexOrThrow("account_id")),
+        tags = getString(getColumnIndexOrThrow("tags")),
+        receipt = getString(getColumnIndexOrThrow("receipt")),
     )
 
     private fun sha256(s: String): String =

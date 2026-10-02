@@ -63,7 +63,7 @@ fun SearchScreen(state: AppState, onEdit: (Txn) -> Unit, onClose: () -> Unit) {
             Kind.RECEIVED -> t.type == TxnType.CREDIT
             Kind.UNTAGGED -> t.category.isEmpty()
         }
-        val haystack = listOfNotNull(t.merchant, t.comment, t.category, t.bank, t.account, t.ref, rupees(t.amountPaise).replace(",", "").removeSuffix(".00"))
+        val haystack = listOfNotNull(t.merchant, t.comment, t.category, t.bank, t.account, t.ref, t.tags.replace(",", " "), rupees(t.amountPaise).replace(",", "").removeSuffix(".00"))
             .joinToString(" ").lowercase()
         okKind && (category == null || t.category == category) && (bank == null || t.bank == bank) &&
             tokens.all { it.replace(",", "").removePrefix("₹") in haystack }

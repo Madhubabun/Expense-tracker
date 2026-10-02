@@ -27,6 +27,8 @@ class DailyReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         runCatching { Alerts.nightlySummary(context) }
         runCatching { Alerts.billReminders(context) }
+        runCatching { Alerts.loanReminders(context) }
+        runCatching { app.expensetracker.data.Plans.applyRepeats(context) }
         runCatching { TodayWidget.refresh(context) }
     }
 }

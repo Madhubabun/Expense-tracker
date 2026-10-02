@@ -112,6 +112,17 @@ object Alerts {
         }
     }
 
+    /** Reminds you the day before and on the due date of a loan you owe or lent. */
+    fun loanReminders(context: Context) {
+        if (!Prefs.flag(context, Prefs.BILL_REMINDERS, true)) return
+        val today = LocalDate.now().toEpochDay()
+        app.expensetracker.data.Plans.loans(context).filter { it.dueDay > 0 && it.leftPaise > 0 && it.dueDay - today in 0..1 }.forEachIndexed { i, l ->
+            val whenText = if (l.dueDay == today) "today" else "tomorrow"
+            val title = if (l.borrowed) "Pay ${l.name} $whenText" else "${l.name} is due to repay you $whenText"
+            post(context, 7300 + i, CH_REMIND, title, "${money(l.leftPaise)} left.")
+        }
+    }
+
     /** Bills are spotted from all history, including older spends that are hidden from the screens. */
     fun detectBills(context: Context, today: Long) = Recurring.detect(
         Db.get(context).all().filter { it.type == TxnType.DEBIT && it.kind == TxnKind.NORMAL && !it.merchant.isNullOrBlank() }

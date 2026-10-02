@@ -59,17 +59,17 @@ import app.expensetracker.data.Txn
 import java.math.BigDecimal
 import java.time.LocalDate
 
-private val EMOJIS = listOf(
+internal val EMOJIS = listOf(
     "🍿", "🎮", "✈️", "🏠", "🐶", "📚", "💇", "🏋️", "🎁", "☕", "🍺", "🎧",
     "👶", "🚗", "🔧", "💻", "📱", "🌴", "🧾", "💸", "🎓", "🪴", "🧘", "🍰",
 )
-private val SWATCHES = listOf(
+internal val SWATCHES = listOf(
     0xFFFF5C7A, 0xFFFF4FD8, 0xFFB18CFF, 0xFF4DA3FF, 0xFF2EF2E0, 0xFFB6FF5C, 0xFFFFB938, 0xFFFF8A4C,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+internal fun AppSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -83,7 +83,7 @@ private fun AppSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun GradientButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun GradientButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     val p = Pal
     Box(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
@@ -95,7 +95,7 @@ private fun GradientButton(text: String, enabled: Boolean = true, onClick: () ->
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CategoryPicker(state: AppState, selected: String, onSelect: (String) -> Unit, onNew: () -> Unit) {
+internal fun CategoryPicker(state: AppState, selected: String, onSelect: (String) -> Unit, onNew: () -> Unit) {
     val p = Pal
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         state.pickable.forEach { c ->
@@ -119,10 +119,30 @@ private fun CategoryPicker(state: AppState, selected: String, onSelect: (String)
     }
 }
 
+/** Comma separated tags with one-tap suggestions from tags you already used. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun TagField(state: AppState, value: String, onChange: (String) -> Unit) {
+    OutlinedTextField(value, onChange, label = { Text("Tags (optional, comma separated)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    val used = value.split(',').map { it.trim().lowercase().removePrefix("#") }.filter { it.isNotEmpty() }
+    val suggestions = state.allTags.filter { it !in used }.take(8)
+    if (suggestions.isNotEmpty()) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            suggestions.forEach { t ->
+                Pill("#$t", onClick = { onChange((value.trim().trimEnd(',') + (if (value.isBlank()) "" else ",") + t)) })
+            }
+        }
+    }
+}
+
+/** Turns what was typed into the stored form: lowercase, no #, no duplicates. */
+fun cleanTags(text: String): String =
+    text.split(',').map { it.trim().lowercase().removePrefix("#").trim() }.filter { it.isNotEmpty() }.distinct().joinToString(",")
+
 /** Pick which wallet a spend belongs to. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AccountPicker(state: AppState, selected: Long, onSelect: (Long) -> Unit) {
+internal fun AccountPicker(state: AppState, selected: Long, onSelect: (Long) -> Unit) {
     val p = Pal
     Text("Paid from", color = p.muted, fontSize = 12.sp)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -138,10 +158,15 @@ private fun AccountPicker(state: AppState, selected: Long, onSelect: (Long) -> U
 }
 
 @Composable
-fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: String, accountId: Long) -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
+fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: String, accountId: Long, tags: String) -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
     var category by remember(txn.id) { mutableStateOf(txn.category) }
     var comment by remember(txn.id) { mutableStateOf(txn.comment) }
     var accountId by remember(txn.id) { mutableStateOf(txn.accountId) }
+    var tags by remember(txn.id) { mutableStateOf(txn.tags) }
+    var receipt by remember(txn.id) { mutableStateOf(txn.receipt) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) receipt = state.setReceipt(txn.copy(receipt = receipt), uri)
+    }
     var creating by remember { mutableStateOf(false) }
     val sign = if (txn.type == TxnType.DEBIT) "Spent" else "Received"
 
@@ -151,7 +176,18 @@ fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: 
         CategoryPicker(state, category, { category = it }, { creating = true })
         OutlinedTextField(comment, { comment = it }, label = { Text("Comment") }, modifier = Modifier.fillMaxWidth())
         AccountPicker(state, accountId) { accountId = it }
-        GradientButton("Save") { onSave(category.trim(), comment.trim(), accountId) }
+        TagField(state, tags) { tags = it }
+        val shot = receipt?.let { state.receiptImage(it) }
+        if (shot != null) {
+            Image(shot.asImageBitmap(), contentDescription = "Receipt", Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                Text(if (shot == null) "📎 Attach receipt" else "Replace receipt", color = Pal.fg)
+            }
+            if (shot != null) TextButton(onClick = { receipt = state.setReceipt(txn.copy(receipt = receipt), null) }) { Text("Remove", color = Pal.bad) }
+        }
+        GradientButton("Save") { onSave(category.trim(), comment.trim(), accountId, cleanTags(tags)) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = onDelete) { Text("Delete", color = Pal.bad) }
             TextButton(onClick = onDismiss) { Text("Cancel", color = Pal.muted) }
@@ -161,13 +197,14 @@ fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: 
 }
 
 @Composable
-fun AddSpendSheet(state: AppState, onAdd: (Long, TxnType, LocalDate, String, String, Long) -> Unit, onDismiss: () -> Unit) {
+fun AddSpendSheet(state: AppState, onAdd: (Long, TxnType, LocalDate, String, String, Long, String) -> Unit, onDismiss: () -> Unit) {
     var amount by remember { mutableStateOf("") }
     var type by remember { mutableStateOf(TxnType.DEBIT) }
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
     var category by remember { mutableStateOf("Food") }
     var note by remember { mutableStateOf("") }
     var accountId by remember { mutableStateOf(state.cashId) }
+    var tags by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
 
     val paise = runCatching { BigDecimal(amount.replace(",", "")).movePointRight(2).toLong() }.getOrNull()
@@ -193,8 +230,9 @@ fun AddSpendSheet(state: AppState, onAdd: (Long, TxnType, LocalDate, String, Str
         CategoryPicker(state, category, { category = it }, { creating = true })
         OutlinedTextField(note, { note = it }, label = { Text("What was it? (optional)") }, modifier = Modifier.fillMaxWidth())
         AccountPicker(state, accountId) { accountId = it }
+        TagField(state, tags) { tags = it }
         OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true, isError = day == null, modifier = Modifier.fillMaxWidth())
-        GradientButton("Add spend", enabled = valid) { onAdd(paise!!, type, day!!, category, note.trim(), accountId) }
+        GradientButton("Add spend", enabled = valid) { onAdd(paise!!, type, day!!, category, note.trim(), accountId, cleanTags(tags)) }
     }
     if (creating) NewCategorySheet(state, onDone = { name -> if (name != null) category = name; creating = false })
 }

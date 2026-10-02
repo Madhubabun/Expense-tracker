@@ -15,7 +15,7 @@ import java.io.File
  */
 object Backup {
     private const val VERSION = 1
-    private val TABLES = listOf("txn", "category", "merchant_category", "category_budget", "account")
+    private val TABLES = listOf("txn", "category", "merchant_category", "category_budget", "account", "goal", "loan", "repeat_txn")
 
     fun export(context: Context): String {
         val db = Db.get(context).database()
@@ -30,6 +30,16 @@ object Backup {
                     if (image.isNotEmpty()) {
                         val f = File(File(context.filesDir, "category-images"), image)
                         if (f.exists()) row.put("image_data", Base64.encodeToString(f.readBytes(), Base64.NO_WRAP))
+                    }
+                }
+            }
+            if (table == "txn") {
+                for (i in 0 until rows.length()) {
+                    val row = rows.getJSONObject(i)
+                    val file = row.optString("receipt", "")
+                    if (file.isNotEmpty()) {
+                        val f = File(Receipts.dir(context), file)
+                        if (f.exists()) row.put("receipt_data", Base64.encodeToString(f.readBytes(), Base64.NO_WRAP))
                     }
                 }
             }
@@ -60,6 +70,14 @@ object Backup {
             val data = row.optString("image_data", "")
             if (name.isNotEmpty() && data.isNotEmpty()) File(images, name).writeBytes(Base64.decode(data, Base64.NO_WRAP))
         }
+        val rcpts = Receipts.dir(context)
+        val txns = root.optJSONArray("txn") ?: JSONArray()
+        for (i in 0 until txns.length()) {
+            val row = txns.getJSONObject(i)
+            val name = row.optString("receipt", "")
+            val data = row.optString("receipt_data", "")
+            if (name.isNotEmpty() && data.isNotEmpty()) File(rcpts, name).writeBytes(Base64.decode(data, Base64.NO_WRAP))
+        }
         Prefs.setBudgetPaise(context, root.optLong("budgetPaise", Prefs.DEFAULT_BUDGET_PAISE))
         Prefs.setStartDay(context, root.optLong("startDay", 0L))
         root.optJSONArray("txn")?.length() ?: 0
@@ -89,7 +107,7 @@ object Backup {
             val row = rows.getJSONObject(i)
             val values = ContentValues()
             row.keys().forEach { key ->
-                if (key == "image_data" || (table == "txn" && key == "id")) return@forEach
+                if (key == "image_data" || key == "receipt_data" || (table == "txn" && key == "id")) return@forEach
                 when (val v = row.get(key)) {
                     JSONObject.NULL -> values.putNull(key)
                     is Number -> values.put(key, v.toLong())

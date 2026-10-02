@@ -158,7 +158,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
     editing?.let { txn ->
         EditTxnSheet(
             state, txn,
-            onSave = { category, comment, accountId -> state.save(txn.id, category, comment, accountId); editing = null },
+            onSave = { category, comment, accountId, tags -> state.save(txn.id, category, comment, accountId, tags); editing = null },
             onDelete = { state.delete(txn.id); editing = null },
             onDismiss = { editing = null },
         )
@@ -166,7 +166,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
     if (adding) {
         AddSpendSheet(
             state,
-            onAdd = { amount, type, day, category, note, accountId -> state.addManual(amount, type, day, category, note, accountId); adding = false },
+            onAdd = { amount, type, day, category, note, accountId, tags -> state.addManual(amount, type, day, category, note, accountId, tags); adding = false },
             onDismiss = { adding = false },
         )
     }
