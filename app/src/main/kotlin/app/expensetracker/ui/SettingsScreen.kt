@@ -177,6 +177,15 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
                         }
                     }
                 }
+                SettingRow("Problem report", "Share odd bank messages (numbers masked)") {
+                    SmallButton("Share") {
+                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_TEXT, state.problemReport())
+                        }
+                        context.startActivity(android.content.Intent.createChooser(send, "Share problem report"))
+                    }
+                }
                 SettingRow("Needs a category", "${state.needsCategory.size} spends waiting") { SmallButton("Review") { onReviewNeeds() } }
                 SettingRow("Alert preview", "Send yourself a sample notification") {
                     SmallButton("Preview") {

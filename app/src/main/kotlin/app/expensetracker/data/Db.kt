@@ -36,6 +36,8 @@ data class Txn(
     val currency: String = "INR",
     /** Amount in [currency] (in its smallest unit) when it is not INR, else 0. */
     val origPaise: Long = 0,
+    /** The original bank SMS text, when it was saved (messages from before this feature have none). */
+    val body: String? = null,
 )
 
 enum class AccountKind(val label: String, val emoji: String) {
@@ -60,7 +62,7 @@ data class Category(val name: String, val emoji: String, val color: Long, val im
 
 /** All data lives in this one SQLite file on the phone. Nothing is sent anywhere. */
 class Db private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 8) {
+    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 9) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -84,6 +86,8 @@ class Db private constructor(context: Context) :
                 currency TEXT NOT NULL DEFAULT 'INR',
                 orig_paise INTEGER NOT NULL DEFAULT 0,
                 pair_state INTEGER NOT NULL DEFAULT 0,
+                body TEXT,
+                keep_both INTEGER NOT NULL DEFAULT 0,
                 dedup TEXT UNIQUE,
                 created_at INTEGER NOT NULL
             )""",
@@ -128,6 +132,10 @@ class Db private constructor(context: Context) :
         }
         if (oldVersion < 7) createWordCategories(db)
         if (oldVersion < 8) db.execSQL("ALTER TABLE txn ADD COLUMN pair_state INTEGER NOT NULL DEFAULT 0")
+        if (oldVersion < 9) {
+            db.execSQL("ALTER TABLE txn ADD COLUMN body TEXT")
+            db.execSQL("ALTER TABLE txn ADD COLUMN keep_both INTEGER NOT NULL DEFAULT 0")
+        }
     }
 
     /** Words from shop names and your notes, and how often each went with a category. Lets the app guess next time. */
@@ -417,7 +425,7 @@ class Db private constructor(context: Context) :
 
     /** Saves a parsed SMS. Returns the new row id, or -1 if the same transaction was already saved. */
     @Synchronized
-    fun insertParsed(p: ParsedTxn, fallbackEpochDay: Long, atMillis: Long, source: String, dedupSeed: String): Long {
+    fun insertParsed(p: ParsedTxn, fallbackEpochDay: Long, atMillis: Long, source: String, dedupSeed: String, body: String? = null): Long {
         val dedup = p.ref?.let { "ref:$it" } ?: ("h:" + sha256(dedupSeed))
         // Banks often send an alert and later a "processed" confirmation for the same debit. Pair them so
         // the money is counted once. pair_state: 0 alert waiting, 1 confirmation waiting, 2 paired.
@@ -437,6 +445,7 @@ class Db private constructor(context: Context) :
                     p.ref?.let { r -> writableDatabase.execSQL("UPDATE txn SET ref = ? WHERE id = ? AND ref IS NULL", arrayOf(r, match)) }
                 }
                 writableDatabase.update("txn", v, "id = ?", arrayOf(match.toString()))
+                if (!p.confirmation && body != null) writableDatabase.execSQL("UPDATE txn SET body = ? WHERE id = ? AND body IS NULL", arrayOf(body, match))
                 return -1
             }
         }
@@ -457,11 +466,57 @@ class Db private constructor(context: Context) :
             put("source", source)
             put("account_id", accountId)
             put("pair_state", if (p.confirmation) 1 else 0)
+            put("body", body)
             put("dedup", dedup)
             put("created_at", System.currentTimeMillis())
         }
-        return writableDatabase.insertWithOnConflict("txn", null, values, SQLiteDatabase.CONFLICT_IGNORE)
+        val id = writableDatabase.insertWithOnConflict("txn", null, values, SQLiteDatabase.CONFLICT_IGNORE)
+        // Seen before this update stored messages: keep the original text for the row that already exists.
+        if (id < 0 && body != null) writableDatabase.execSQL("UPDATE txn SET body = ? WHERE dedup = ? AND body IS NULL", arrayOf(body, dedup))
+        return id
     }
+
+    /**
+     * Bank debits that look like the same payment: same wallet, same amount, within ten minutes, and not
+     * yet marked "keep both". Maps each such spend to its partner.
+     */
+    fun possibleRepeats(): Map<Long, Long> =
+        readableDatabase.rawQuery(
+            """SELECT a.id, b.id FROM txn a JOIN txn b ON a.id != b.id
+               WHERE a.type = 'DEBIT' AND b.type = 'DEBIT' AND a.source = 'sms' AND b.source = 'sms'
+               AND a.account_id != 0 AND a.account_id = b.account_id AND a.amount_paise = b.amount_paise
+               AND a.keep_both = 0 AND b.keep_both = 0 AND ABS(a.at_ms - b.at_ms) <= 600000""",
+            null,
+        ).use { c -> buildMap { while (c.moveToNext()) put(c.getLong(0), c.getLong(1)) } }
+
+    /** Counts the two as one: [drop] is removed, and [keep] takes its category if it has none. */
+    @Synchronized
+    fun mergeRepeat(keep: Long, drop: Long) {
+        val d = get(drop) ?: return
+        val k = get(keep) ?: return
+        if (k.category.isEmpty() && d.category.isNotEmpty()) writableDatabase.execSQL("UPDATE txn SET category = ? WHERE id = ?", arrayOf(d.category, keep))
+        if (k.merchant.isNullOrBlank() && !d.merchant.isNullOrBlank()) writableDatabase.execSQL("UPDATE txn SET merchant = ? WHERE id = ?", arrayOf(d.merchant, keep))
+        writableDatabase.delete("txn", "id = ?", arrayOf(drop.toString()))
+    }
+
+    /** Both are real payments: stop flagging them. */
+    fun keepBoth(a: Long, b: Long) {
+        writableDatabase.execSQL("UPDATE txn SET keep_both = 1 WHERE id IN (?, ?)", arrayOf(a, b))
+    }
+
+    /** Recent bank messages that went wrong or look odd, with long numbers masked, ready to share. */
+    fun problemReport(): String {
+        val repeats = possibleRepeats()
+        val rows = all().filter { it.source == "sms" && (it.id in repeats || it.merchant.isNullOrBlank()) }.take(15)
+        if (rows.isEmpty()) return "No problem messages found."
+        return rows.joinToString("\n\n") { t ->
+            val why = if (t.id in repeats) "possible repeat" else "no shop name"
+            "[$why] ${if (t.type == TxnType.DEBIT) "debit" else "credit"} ${t.amountPaise / 100.0}, shop=${t.merchant ?: "-"}, ref=${t.ref?.let { mask(it) } ?: "-"}\n" +
+                (t.body?.let { mask(it) } ?: "(original message not saved)")
+        }
+    }
+
+    private fun mask(s: String) = s.replace(Regex("\\d{6,}")) { "•".repeat(it.value.length - 2) + it.value.takeLast(2) }
 
     fun insertManual(
         amountPaise: Long,
@@ -569,6 +624,7 @@ class Db private constructor(context: Context) :
         receipt = getString(getColumnIndexOrThrow("receipt")),
         currency = getString(getColumnIndexOrThrow("currency")),
         origPaise = getLong(getColumnIndexOrThrow("orig_paise")),
+        body = getString(getColumnIndexOrThrow("body")),
     )
 
     private fun sha256(s: String): String =

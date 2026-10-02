@@ -203,7 +203,12 @@ fun TxnRow(state: AppState, t: Txn, onEdit: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     val time = timeText(t.atMillis)
                     if (time.isNotEmpty()) Text(time, color = p.muted, fontSize = 12.sp)
-                    if (t.category.isEmpty()) {
+                    if (t.id in state.repeatPairs) {
+                        Text(
+                            "Repeat?", color = p.bad, fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                            modifier = Modifier.clip(CircleShape).border(1.dp, p.bad, CircleShape).padding(horizontal = 8.dp, vertical = 1.dp),
+                        )
+                    } else if (t.category.isEmpty()) {
                         Text(
                             "+ add category", color = p.accent, fontSize = 11.sp, fontWeight = FontWeight.Medium,
                             modifier = Modifier.clip(CircleShape).border(1.dp, p.accent, CircleShape).padding(horizontal = 8.dp, vertical = 1.dp),

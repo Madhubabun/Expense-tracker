@@ -196,7 +196,27 @@ fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: 
             }
             if (shot != null) TextButton(onClick = { receipt = state.setReceipt(txn.copy(receipt = receipt), null) }) { Text("Remove", color = Pal.bad) }
         }
+        val partnerId = state.repeatPairs[txn.id]
+        val partner = partnerId?.let { id -> state.allTxns.firstOrNull { it.id == id } }
+        if (partner != null) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).border(1.dp, Pal.bad, RoundedCornerShape(16.dp)).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("Possible repeat", color = Pal.bad, fontWeight = FontWeight.SemiBold)
+                Text("Another ${rupees(partner.amountPaise)} debit from the same account came ${timeText(partner.atMillis).ifEmpty { "around the same time" }}. Is this one payment or two?", color = Pal.muted, fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = { state.mergeRepeat(txn.id, partner.id); onDismiss() }) { Text("Count once", color = Pal.fg) }
+                    OutlinedButton(onClick = { state.keepBoth(txn.id, partner.id); onDismiss() }) { Text("Keep both", color = Pal.fg) }
+                }
+            }
+        }
         GradientButton("Save") { onSave(category.trim(), comment.trim(), accountId, cleanTags(tags)) }
+        if (txn.source == "sms") {
+            var showSms by remember(txn.id) { mutableStateOf(false) }
+            TextButton(onClick = { showSms = !showSms }) { Text(if (showSms) "Hide original SMS" else "Show original SMS", color = Pal.accent) }
+            if (showSms) Text(txn.body ?: "The original message was not saved for spends from before this update.", color = Pal.muted, fontSize = 12.sp)
+        }
         if (txn.amountPaise > 100) SplitBox(state, txn, onSplit)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = onDelete) { Text("Delete", color = Pal.bad) }

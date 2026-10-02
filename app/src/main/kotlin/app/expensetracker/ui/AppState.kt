@@ -33,7 +33,8 @@ import java.time.LocalDate
 class AppState(private val context: Context) {
     private val db = Db.get(context)
 
-    private var allTxns = emptyList<Txn>()
+    var allTxns = emptyList<Txn>()
+        private set
 
     /** Spends from the tracking start day onwards. Older ones stay in the database but are hidden. */
     var txns by mutableStateOf<List<Txn>>(emptyList())
@@ -42,6 +43,9 @@ class AppState(private val context: Context) {
         private set
     var hiddenCount by mutableStateOf(0)
         private set
+    /** Spends that look like the same payment twice, each mapped to the other one. */
+    var repeatPairs by mutableStateOf<Map<Long, Long>>(emptyMap())
+
     var categories by mutableStateOf<List<Category>>(emptyList())
         private set
     var budgetPaise by mutableStateOf(Prefs.budgetPaise(context))
@@ -76,6 +80,7 @@ class AppState(private val context: Context) {
         allTxns = db.all()
         txns = allTxns.filter { it.epochDay >= startDay }
         hiddenCount = allTxns.size - txns.size
+        repeatPairs = db.possibleRepeats()
         categories = db.categories()
         categoryBudgets = db.categoryBudgets()
         accounts = db.accounts()
@@ -132,6 +137,12 @@ class AppState(private val context: Context) {
         db.delete(id)
         refresh()
     }
+
+    fun mergeRepeat(keep: Long, drop: Long) { db.mergeRepeat(keep, drop); refresh() }
+
+    fun keepBoth(a: Long, b: Long) { db.keepBoth(a, b); refresh() }
+
+    fun problemReport(): String = db.problemReport()
 
     fun addManual(amountPaise: Long, type: TxnType, day: LocalDate, category: String, comment: String, accountId: Long = db.cashAccountId(), tags: String = "", currency: String = "INR", origPaise: Long = 0) {
         db.insertManual(amountPaise, type, day.toEpochDay(), category, comment, null, accountId, tags, currency, origPaise)

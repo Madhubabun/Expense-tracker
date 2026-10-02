@@ -29,7 +29,7 @@ object SmsProcessor {
         if ((parsed.epochDay ?: day) < Prefs.startDay(context)) return SKIPPED_OLD
         // A message that carries its own time (07:50:56) is the same transaction however often it arrives.
         val seed = if (Regex("""\d{1,2}:\d{2}:\d{2}""").containsMatchIn(body)) body else body + "|" + receivedMillis / 60_000
-        val id = db.insertParsed(parsed, day, receivedMillis, "sms", seed)
+        val id = db.insertParsed(parsed, day, receivedMillis, "sms", seed, body)
         if (id > 0 && notify) {
             db.get(id)?.let { Notifier.show(context, it) }
             runCatching { Alerts.checkBudgets(context) }
