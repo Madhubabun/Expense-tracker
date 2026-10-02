@@ -24,22 +24,33 @@ data class SafeToSpend(
             budgetPaise: Long,
             repeatsLeftPaise: Long,
             spentPaise: Long,
-            today: LocalDate,
+            daysLeft: Int,
         ): SafeToSpend {
             val known = receivedPaise + expectedPaise
             val usingBudget = known <= 0
             val income = if (usingBudget) budgetPaise else known
             val left = income - repeatsLeftPaise - spentPaise
-            val daysLeft = today.lengthOfMonth() - today.dayOfMonth + 1
-            return SafeToSpend(income, repeatsLeftPaise, spentPaise, left, left.coerceAtLeast(0) / daysLeft, daysLeft, usingBudget)
+            val days = daysLeft.coerceAtLeast(1)
+            return SafeToSpend(income, repeatsLeftPaise, spentPaise, left, left.coerceAtLeast(0) / days, days, usingBudget)
         }
     }
 }
 
 /** Dates and amounts for things that repeat every month. */
 object RepeatPlan {
-    /** The day [dayOfMonth] falls on in [month]; short months use their last day. */
-    fun occurrence(month: YearMonth, dayOfMonth: Int): LocalDate = month.atDay(minOf(dayOfMonth, month.lengthOfMonth()))
+    /** Stands for "the last working day of the month" in a repeat's day of month. */
+    const val LAST_WORKING_DAY = 99
+
+    /** The day [dayOfMonth] falls on in [month]; short months use their last day. 99 means the last working day. */
+    fun occurrence(month: YearMonth, dayOfMonth: Int): LocalDate =
+        if (dayOfMonth >= LAST_WORKING_DAY) PayCycle.payday(month) else month.atDay(minOf(dayOfMonth, month.lengthOfMonth()))
+
+    /** The turn of this repeat closest to [day], if one falls within five days of it. */
+    fun nearestOccurrence(day: LocalDate, dayOfMonth: Int): LocalDate? {
+        val month = YearMonth.from(day)
+        return listOf(month.minusMonths(1), month, month.plusMonths(1)).map { occurrence(it, dayOfMonth) }
+            .minByOrNull { abs(it.toEpochDay() - day.toEpochDay()) }?.takeIf { abs(it.toEpochDay() - day.toEpochDay()) <= 5 }
+    }
 
     /** Tithe-style repeats are a percentage of income; everything else is a fixed amount. */
     fun amount(fixedPaise: Long, percent: Int, incomePaise: Long): Long =
@@ -53,9 +64,33 @@ object RepeatPlan {
         if (expectedPaise <= 0) return false
         val tolerance = if (percent > 0) expectedPaise / 4 else maxOf(100L, expectedPaise / 100)
         if (abs(txnPaise - expectedPaise) > tolerance) return false
-        val month = YearMonth.from(txnDay)
-        return listOf(month.minusMonths(1), month, month.plusMonths(1)).any {
-            abs(occurrence(it, dayOfMonth).toEpochDay() - txnDay.toEpochDay()) <= 5
+        return nearestOccurrence(txnDay, dayOfMonth) != null
+    }
+}
+
+/** Salary comes on the last working day of the month (weekends skipped), so money runs payday to payday. */
+object PayCycle {
+    /** The last Monday to Friday of [month]. */
+    fun payday(month: YearMonth): LocalDate {
+        var d = month.atEndOfMonth()
+        while (d.dayOfWeek == java.time.DayOfWeek.SATURDAY || d.dayOfWeek == java.time.DayOfWeek.SUNDAY) d = d.minusDays(1)
+        return d
+    }
+
+    /** One pay cycle: [start] is a payday, [end] the day before the next one, which is [nextPayday]. */
+    data class Span(val start: LocalDate, val end: LocalDate, val nextPayday: LocalDate)
+
+    fun span(today: LocalDate): Span {
+        val month = YearMonth.from(today)
+        val thisPay = payday(month)
+        return if (!today.isBefore(thisPay)) {
+            val next = payday(month.plusMonths(1))
+            Span(thisPay, next.minusDays(1), next)
+        } else {
+            Span(payday(month.minusMonths(1)), thisPay.minusDays(1), thisPay)
         }
     }
+
+    /** Whole days from [today] to the next payday, at least one. */
+    fun daysLeft(today: LocalDate): Int = (span(today).nextPayday.toEpochDay() - today.toEpochDay()).toInt().coerceAtLeast(1)
 }

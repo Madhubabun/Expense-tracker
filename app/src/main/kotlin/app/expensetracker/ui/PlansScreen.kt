@@ -63,20 +63,20 @@ fun PlansScreen(state: AppState) {
         // Repeats
         SectionTitle("Repeats every month")
         if (state.repeats.isEmpty()) Text("EMIs, loans, rent, SIPs, insurance, tithe or salary: add each once and you get reminders and a truer safe-to-spend.", color = Pal.muted, fontSize = 13.sp)
-        dues.forEach { d ->
-            val r = d.repeat
-            Card(Modifier.clickable { repeatEditing = r }) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(repeatEmoji(r.rtype), fontSize = 24.sp)
-                    Column(Modifier.weight(1f)) {
-                        Text(r.title, color = Pal.fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "${r.rtype} · day ${r.dayOfMonth} of every month" + (if (r.pct > 0) " · ${r.pct}% of income" else "") +
-                                if (d.paid) " · paid this month ✓" else "",
-                            color = if (d.paid) Pal.good else Pal.muted, fontSize = 12.sp,
-                        )
+        val (paidDues, openDues) = dues.partition { it.paid }
+        openDues.forEach { d -> RepeatCard(state, d) { repeatEditing = d.repeat } }
+        if (paidDues.isNotEmpty()) {
+            SectionTitle("Paid this cycle")
+            Card {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    paidDues.forEach { d ->
+                        Row(Modifier.fillMaxWidth().clickable { repeatEditing = d.repeat }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(repeatEmoji(d.repeat.rtype), fontSize = 20.sp)
+                            Text(d.repeat.title, color = Pal.fg, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1)
+                            Text((if (d.repeat.type == TxnType.DEBIT) "−" else "+") + rupees(d.amountPaise).removeSuffix(".00"), color = Pal.muted, fontSize = 14.sp)
+                            Text("✓", color = Pal.good, fontSize = 15.sp)
+                        }
                     }
-                    Text((if (r.type == TxnType.DEBIT) "−" else "+") + rupees(d.amountPaise).removeSuffix(".00"), color = if (r.type == TxnType.DEBIT) Pal.fg else Pal.good, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -208,3 +208,27 @@ private fun ProgressBar(frac: Float, tint: Color) {
 }
 
 fun signedRupees(paise: Long): String = (if (paise < 0) "−" else "") + "₹" + Reports.formatRupees(Math.abs(paise)).removeSuffix(".00")
+
+private fun dayWords(r: Repeat) = if (r.dayOfMonth >= app.expensetracker.core.RepeatPlan.LAST_WORKING_DAY) "last working day" else "day ${r.dayOfMonth}"
+
+@Composable
+private fun RepeatCard(state: AppState, d: RepeatDue, onClick: () -> Unit) {
+    val r = d.repeat
+    Card(Modifier.clickable(onClick = onClick)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(repeatEmoji(r.rtype), fontSize = 24.sp)
+            Column(Modifier.weight(1f)) {
+                Text(r.title, color = Pal.fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                val kind = if (r.title.contains(r.rtype, ignoreCase = true)) "" else "${r.rtype} · "
+                Text(
+                    kind + dayWords(r) + " of every month" + if (r.pct > 0) " · ${r.pct}% of income" else "",
+                    color = if (d.overdue) Pal.bad else Pal.muted, fontSize = 12.sp,
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text((if (r.type == TxnType.DEBIT) "−" else "+") + rupees(d.amountPaise).removeSuffix(".00"), color = if (r.type == TxnType.DEBIT) Pal.fg else Pal.good, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                SmallButton("Paid") { state.markPaid(d, true) }
+            }
+        }
+    }
+}

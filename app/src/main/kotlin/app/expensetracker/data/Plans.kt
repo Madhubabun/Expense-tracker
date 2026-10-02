@@ -198,48 +198,62 @@ object Plans {
 
     private fun yearMonth(d: LocalDate) = d.year * 100 + d.monthValue
 
-    /** What came in this month plus the salary-type repeats still expected. Percent repeats are based on this. */
+    /** Salary-day-to-salary-day: the pay cycle that holds [today]. */
+    fun cycle(today: LocalDate = LocalDate.now()) = app.expensetracker.core.PayCycle.span(today)
+
+    /**
+     * Income for the pay cycle holding [today]: what has come in plus salary-type repeats still expected. If you
+     * typed the cycle's income yourself, that replaces both. Percent repeats (tithe) are worked out from this.
+     */
     fun monthIncome(context: Context, today: LocalDate = LocalDate.now()): Pair<Long, Long> {
-        val start = today.withDayOfMonth(1).toEpochDay()
+        val span = cycle(today)
+        val typed = Prefs.incomeOverride(context, span.start.toEpochDay())
+        if (typed > 0) return typed to 0L
+        // Salary can land a day or two before the last working day (holidays), so look a few days back.
+        val from = span.start.minusDays(3).toEpochDay()
         val received = db(context).rawQuery(
-            "SELECT COALESCE(SUM(amount_paise), 0) FROM txn WHERE type = 'CREDIT' AND kind = 'NORMAL' AND epoch_day >= ? AND category NOT IN ('Transfer', 'Card bill payment', 'Cash withdrawal', 'Investments')",
-            arrayOf(start.toString()),
+            "SELECT COALESCE(SUM(amount_paise), 0) FROM txn WHERE type = 'CREDIT' AND kind = 'NORMAL' AND epoch_day >= ? AND epoch_day <= ? AND category NOT IN ('Transfer', 'Card bill payment', 'Cash withdrawal', 'Investments')",
+            arrayOf(from.toString(), span.end.toEpochDay().toString()),
         ).use { it.moveToFirst(); it.getLong(0) }
-        val expected = repeats(context).filter { it.type == TxnType.CREDIT && it.pct == 0 && it.paidMonth != yearMonth(today) && occurrence(it, today) >= LocalDate.ofEpochDay(it.startDay) }
-            .sumOf { it.amountPaise }
+        val expected = duesFor(repeats(context), span, 0).filter { it.repeat.type == TxnType.CREDIT && it.repeat.pct == 0 && !it.paid }.sumOf { it.amountPaise }
         return received to expected
     }
 
-    private fun occurrence(r: Repeat, day: LocalDate) = app.expensetracker.core.RepeatPlan.occurrence(YearMonth.from(day), r.dayOfMonth)
+    private fun occurrence(r: Repeat, month: YearMonth) = app.expensetracker.core.RepeatPlan.occurrence(month, r.dayOfMonth)
 
-    /** Every repeat's turn this month, with tithe-style amounts worked out from this month's income. */
-    fun dues(context: Context, today: LocalDate = LocalDate.now()): List<RepeatDue> {
-        val (received, expected) = monthIncome(context, today)
-        return dues(repeats(context), today, received + expected)
+    /** This repeat's turn inside a pay cycle: the one date in [start, end], or the first one after the start. */
+    private fun turnIn(r: Repeat, span: app.expensetracker.core.PayCycle.Span): LocalDate {
+        val m = YearMonth.from(span.start)
+        val inside = listOf(m, m.plusMonths(1)).map { occurrence(r, it) }.firstOrNull { !it.isBefore(span.start) && !it.isAfter(span.end) }
+        return inside ?: listOf(m, m.plusMonths(1)).map { occurrence(r, it) }.first { !it.isBefore(span.start) }
     }
 
-    fun dues(all: List<Repeat>, today: LocalDate, incomePaise: Long): List<RepeatDue> =
+    fun duesFor(all: List<Repeat>, span: app.expensetracker.core.PayCycle.Span, incomePaise: Long): List<RepeatDue> =
         all.mapNotNull { r ->
-            val day = occurrence(r, today)
-            if (day.toEpochDay() < r.startDay && r.startDay > 0 && day.isBefore(LocalDate.ofEpochDay(r.startDay))) null
-            else RepeatDue(r, day, app.expensetracker.core.RepeatPlan.amount(r.amountPaise, r.pct, incomePaise), r.paidMonth == yearMonth(today))
+            val day = turnIn(r, span)
+            if (r.startDay > 0 && day.isBefore(LocalDate.ofEpochDay(r.startDay))) null
+            else RepeatDue(r, day, app.expensetracker.core.RepeatPlan.amount(r.amountPaise, r.pct, incomePaise), r.paidMonth == yearMonth(day))
         }.sortedBy { it.day }
 
-    /** Repeats that still have to be paid in the next [days] days, overdue ones first. Looks into next month too. */
+    /** Every repeat's turn in this pay cycle, with tithe-style amounts worked out from the cycle's income. */
+    fun dues(context: Context, today: LocalDate = LocalDate.now()): List<RepeatDue> {
+        val (received, expected) = monthIncome(context, today)
+        return duesFor(repeats(context), cycle(today), received + expected)
+    }
+
+    /** Repeats still to pay in the next [days] days, overdue ones first. Reaches into the next pay cycle too. */
     fun upcoming(context: Context, today: LocalDate = LocalDate.now(), days: Int = 7): List<RepeatDue> {
         val (received, expected) = monthIncome(context, today)
         val all = repeats(context)
-        val thisMonth = dues(all, today, received + expected).filter { !it.paid && it.day <= today.plusDays(days.toLong()) }
-        val next = today.plusMonths(1).withDayOfMonth(1)
-        val nextMonth = all.mapNotNull { r ->
-            val day = occurrence(r, next)
-            if (day <= today.plusDays(days.toLong()) && r.paidMonth != yearMonth(next)) RepeatDue(r, day, app.expensetracker.core.RepeatPlan.amount(r.amountPaise, r.pct, received + expected), false) else null
-        }
-        return (thisMonth + nextMonth).sortedBy { it.day }
+        val limit = today.plusDays(days.toLong())
+        val now = duesFor(all, cycle(today), received + expected).filter { !it.paid && it.day <= limit }
+        val next = duesFor(all, cycle(cycle(today).nextPayday), received + expected).filter { !it.paid && it.day <= limit }
+        return (now + next).sortedBy { it.day }
     }
 
-    fun markPaid(context: Context, id: Long, paid: Boolean) {
-        db(context).execSQL("UPDATE repeat_txn SET paid_month = ? WHERE id = ?", arrayOf(if (paid) yearMonth(LocalDate.now()) else 0, id))
+    /** Marks one turn of a repeat paid (or not). [turn] is the date of that turn. */
+    fun markPaid(context: Context, id: Long, turn: LocalDate, paid: Boolean) {
+        db(context).execSQL("UPDATE repeat_txn SET paid_month = ? WHERE id = ?", arrayOf(if (paid) yearMonth(turn) else 0, id))
     }
 
     /**
@@ -254,11 +268,13 @@ object Plans {
         val day = LocalDate.ofEpochDay(t.epochDay)
         val (received, expected) = monthIncome(context, day)
         val match = repeats(context).firstOrNull { r ->
-            r.type == t.type && r.paidMonth != yearMonth(day) && app.expensetracker.core.RepeatPlan.matches(
+            val turn = app.expensetracker.core.RepeatPlan.nearestOccurrence(day, r.dayOfMonth)
+            turn != null && r.type == t.type && r.paidMonth != yearMonth(turn) && app.expensetracker.core.RepeatPlan.matches(
                 day, t.amountPaise, r.dayOfMonth, app.expensetracker.core.RepeatPlan.amount(r.amountPaise, r.pct, received + expected), r.pct,
             )
         } ?: return false
-        database.execSQL("UPDATE repeat_txn SET paid_month = ? WHERE id = ?", arrayOf(yearMonth(day), match.id))
+        val turnDay = app.expensetracker.core.RepeatPlan.nearestOccurrence(day, match.dayOfMonth) ?: day
+        database.execSQL("UPDATE repeat_txn SET paid_month = ? WHERE id = ?", arrayOf(yearMonth(turnDay), match.id))
         if (t.category.isEmpty() && match.category.isNotEmpty()) database.execSQL("UPDATE txn SET category = ? WHERE id = ?", arrayOf(match.category, txnId))
         if (t.merchant.isNullOrBlank()) database.execSQL("UPDATE txn SET merchant = ? WHERE id = ?", arrayOf(match.title, txnId))
         database.execSQL("DELETE FROM txn WHERE source = 'repeat' AND dedup LIKE ? AND ABS(epoch_day - ?) <= 5", arrayOf("rep:${match.id}:%", t.epochDay))
@@ -288,7 +304,9 @@ object Plans {
             if (bank.category.isEmpty() && e.category.isNotEmpty()) database.execSQL("UPDATE txn SET category = ? WHERE id = ?", arrayOf(e.category, bank.id))
             if (bank.merchant.isNullOrBlank()) database.execSQL("UPDATE txn SET merchant = ? WHERE id = ?", arrayOf(e.merchant ?: r.title, bank.id))
             database.execSQL("DELETE FROM txn WHERE id = ?", arrayOf(e.id))
-            if (yearMonth(day) == yearMonth(LocalDate.now()) && r.paidMonth != yearMonth(day)) markPaid(context, r.id, true)
+            app.expensetracker.core.RepeatPlan.nearestOccurrence(day, r.dayOfMonth)?.let { turn ->
+                if (turn >= cycle().start && r.paidMonth != yearMonth(turn)) markPaid(context, r.id, turn, true)
+            }
             removed++
         }
         return removed

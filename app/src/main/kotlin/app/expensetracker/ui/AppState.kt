@@ -77,7 +77,13 @@ class AppState(private val context: Context) {
     var next7 by mutableStateOf<List<app.expensetracker.data.RepeatDue>>(emptyList())
 
     /** What is free to spend this month after the repeats still to pay. */
-    var safe by mutableStateOf(app.expensetracker.core.SafeToSpend.compute(0, 0, 0, 0, 0, LocalDate.now()))
+    var safe by mutableStateOf(app.expensetracker.core.SafeToSpend.compute(0, 0, 0, 0, 0, 30))
+        private set
+
+    /** The next salary day (last working day of the month) and whether this cycle's income was typed by hand. */
+    var payday by mutableStateOf(LocalDate.now())
+        private set
+    var incomeTyped by mutableStateOf(false)
         private set
 
     private val images = HashMap<String, Bitmap?>()
@@ -115,11 +121,15 @@ class AppState(private val context: Context) {
         investments = Plans.investments(context)
         runCatching {
             val today = LocalDate.now()
+            val span = Plans.cycle(today)
             val (received, expected) = Plans.monthIncome(context, today)
-            val dues = Plans.dues(repeats, today, received + expected)
+            val dues = Plans.duesFor(repeats, span, received + expected)
             val left = dues.filter { !it.paid && it.repeat.type == TxnType.DEBIT }.sumOf { it.amountPaise }
-            val month = Reports.summarize(reportTxns(), Period.MONTH, today)
-            safe = app.expensetracker.core.SafeToSpend.compute(received, expected, budgetPaise, left, month.spentPaise + month.investedPaise, today)
+            val inCycle = reportTxns().filter { !it.date.isBefore(span.start) && it.type == TxnType.DEBIT }
+            val spent = inCycle.filter { it.countable }.sumOf { it.amountPaise } + inCycle.filter { it.kind == TxnKind.NORMAL && it.category == Categories.INVEST }.sumOf { it.amountPaise }
+            safe = app.expensetracker.core.SafeToSpend.compute(received, expected, budgetPaise, left, spent, app.expensetracker.core.PayCycle.daysLeft(today))
+            payday = span.nextPayday
+            incomeTyped = Prefs.incomeOverride(context, span.start.toEpochDay()) > 0
             next7 = Plans.upcoming(context, today, 7)
         }
         runCatching { app.expensetracker.TodayWidget.refresh(context) }
@@ -296,7 +306,15 @@ class AppState(private val context: Context) {
     /** Every repeat's turn this month with its amount worked out and whether it has been paid. */
     fun dues() = Plans.dues(context)
 
-    fun markPaid(r: Repeat, paid: Boolean) { Plans.markPaid(context, r.id, paid); refresh() }
+    fun markPaid(d: app.expensetracker.data.RepeatDue, paid: Boolean) { Plans.markPaid(context, d.repeat.id, d.day, paid); refresh() }
+
+    /** What is currently counted as this pay cycle's income, and the typed amount (0 if none). */
+    fun cycleIncome(): Long = Plans.monthIncome(context).let { it.first + it.second }
+
+    fun setCycleIncome(paise: Long) {
+        Prefs.setIncomeOverride(context, Plans.cycle().start.toEpochDay(), paise)
+        refresh()
+    }
 
     fun saveInvestment(i: app.expensetracker.data.Investment?, name: String, invested: Long, value: Long) {
         Plans.saveInvestment(context, i?.id, name.trim(), invested, value); refresh()

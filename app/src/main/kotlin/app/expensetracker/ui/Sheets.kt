@@ -256,7 +256,7 @@ fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntr
     val valid = paise != null && paise > 0 && day != null
 
     AppSheet(onDismiss) {
-        Text("Add a spend", color = Pal.fg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text(if (type == TxnType.CREDIT) "Add income" else "Add a spend", color = Pal.fg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(TxnType.DEBIT to "Spent", TxnType.CREDIT to "Received").forEach { (t, label) ->
                 val on = type == t
@@ -300,7 +300,7 @@ fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntr
         AccountPicker(state, accountId) { accountId = it }
         TagField(state, tags) { tags = it }
         OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true, isError = day == null, modifier = Modifier.fillMaxWidth())
-        GradientButton("Add spend", enabled = valid) { onAdd(NewSpend(paise!!, type, day!!, category, note.trim(), accountId, cleanTags(tags), currency, if (currency == "INR") 0 else typed!!)) }
+        GradientButton(if (type == TxnType.CREDIT) "Add income" else "Add spend", enabled = valid) { onAdd(NewSpend(paise!!, type, day!!, category, note.trim(), accountId, cleanTags(tags), currency, if (currency == "INR") 0 else typed!!)) }
     }
     if (creating) NewCategorySheet(state, onDone = { name -> if (name != null) category = name; creating = false })
 }

@@ -32,7 +32,7 @@ import java.time.LocalDate
 
 /** Money that came in: salary, refunds and anything received, grouped by who it came from. */
 @Composable
-fun IncomeScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period) -> Unit, onOffset: (Int) -> Unit, onEdit: (Txn) -> Unit) {
+fun IncomeScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period) -> Unit, onOffset: (Int) -> Unit, onAdd: () -> Unit, onEdit: (Txn) -> Unit) {
     val anchor = Reports.shift(period, LocalDate.now(), offset.toLong())
     val (start, end) = Reports.range(period, anchor)
     val credits = state.txns.filter {
@@ -56,6 +56,7 @@ fun IncomeScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period
                 Text("${credits.size} ${if (credits.size == 1) "payment" else "payments"} received", color = Color.White.copy(alpha = .85f), fontSize = 12.sp)
             }
         }
+        SmallButton("＋ Add income", primary = true) { onAdd() }
         if (credits.isEmpty()) {
             EmptyState("💸", "No income in this period", "Salary, refunds and money received show up here from your bank messages.")
         } else {

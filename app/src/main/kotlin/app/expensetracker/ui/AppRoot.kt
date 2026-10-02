@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -79,6 +80,11 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
         adding = true
     }
 
+    fun startIncome() {
+        voice = app.expensetracker.core.VoiceEntry(null, app.expensetracker.core.TxnType.CREDIT, "", "Salary")
+        adding = true
+    }
+
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
         val wanted = buildList {
@@ -140,7 +146,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
             when (tab) {
                 Tab.OVERVIEW -> OverviewScreen(state, period, offset, onPeriod, onOffset) { editing = it }
                 Tab.EXPENSES -> PeriodScreen(state, period, offset, onPeriod, onOffset, { p, a -> insights = p to a }) { editing = it }
-                Tab.INCOME -> IncomeScreen(state, period, offset, onPeriod, onOffset) { editing = it }
+                Tab.INCOME -> IncomeScreen(state, period, offset, onPeriod, onOffset, onAdd = { startIncome() }) { editing = it }
                 Tab.STATS -> StatsScreen(state, period, offset, onPeriod, onOffset) { p, a -> insights = p to a }
                 Tab.PLANS -> PlansScreen(state)
             }
@@ -150,24 +156,21 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
                 contentAlignment = Alignment.Center,
             ) { Text("⚙️", fontSize = 18.sp) }
             if (tab != Tab.PLANS) {
-                Box(
-                    Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 80.dp).size(48.dp).clip(CircleShape)
-                        .background(Pal.surface2).clickable { searching = true },
-                    contentAlignment = Alignment.Center,
-                ) { Text("🔍", fontSize = 20.sp) }
-                Box(
-                    Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 136.dp).size(48.dp).clip(CircleShape)
-                        .background(Pal.surface2).clickable { speak() },
-                    contentAlignment = Alignment.Center,
-                ) { Text("🎤", fontSize = 20.sp) }
                 if (micNote.isNotEmpty()) Text(micNote, color = Pal.muted, fontSize = 12.sp, modifier = Modifier.align(Alignment.BottomStart).padding(16.dp).padding(bottom = 64.dp))
                 Row(
-                    Modifier.align(Alignment.BottomEnd).padding(16.dp).clip(CircleShape)
-                        .background(Brush.horizontalGradient(listOf(Pal.accent, Pal.pink)))
-                        .clickable { adding = true }.padding(horizontal = 20.dp, vertical = 14.dp),
+                    Modifier.align(Alignment.BottomEnd).padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text("＋  Add spend", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Box(Modifier.size(46.dp).clip(CircleShape).background(Pal.surface2).clickable { speak() }, contentAlignment = Alignment.Center) { Text("🎤", fontSize = 19.sp) }
+                    Box(Modifier.size(46.dp).clip(CircleShape).background(Pal.surface2).clickable { searching = true }, contentAlignment = Alignment.Center) { Text("🔍", fontSize = 19.sp) }
+                    Row(
+                        Modifier.clip(CircleShape).background(Brush.horizontalGradient(listOf(Pal.accent, Pal.pink)))
+                            .clickable { if (tab == Tab.INCOME) startIncome() else adding = true }.padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(if (tab == Tab.INCOME) "＋  Add income" else "＋  Add spend", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
                 }
             }
         }
@@ -201,10 +204,27 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
     if (adding) {
         AddSpendSheet(
             state,
-            onAdd = { n -> state.addManual(n.amountPaise, n.type, n.day, n.category, n.note, n.accountId, n.tags, n.currency, n.origPaise); adding = false; voice = null },
+            onAdd = { n ->
+                state.addManual(n.amountPaise, n.type, n.day, n.category, n.note, n.accountId, n.tags, n.currency, n.origPaise)
+                adding = false; voice = null
+                // Show the period that holds what was just added, so it is not missed on another day.
+                offset = offsetFor(period, n.day)
+            },
             initial = voice,
             onDismiss = { adding = false; voice = null },
         )
     }
     if (newCategory) NewCategorySheet(state) { newCategory = false }
+}
+
+/** How many periods back from now holds [day] (0 for today or the future). */
+private fun offsetFor(period: Period, day: java.time.LocalDate): Int {
+    val today = java.time.LocalDate.now()
+    if (!day.isBefore(today)) return 0
+    return when (period) {
+        Period.DAY -> -(today.toEpochDay() - day.toEpochDay()).toInt()
+        Period.WEEK -> -((today.toEpochDay() - day.toEpochDay()) / 7).toInt()
+        Period.MONTH -> -((today.year * 12 + today.monthValue) - (day.year * 12 + day.monthValue))
+        Period.YEAR -> -(today.year - day.year)
+    }
 }

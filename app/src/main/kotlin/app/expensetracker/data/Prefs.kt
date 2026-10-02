@@ -35,6 +35,16 @@ object Prefs {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putLong("last_sms_scan", millis).apply()
     }
 
+    /** Income typed by hand for the pay cycle that started on [cycleStartDay]. 0 when none. */
+    fun incomeOverride(context: Context, cycleStartDay: Long): Long =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getLong("income_$cycleStartDay", 0L)
+
+    fun setIncomeOverride(context: Context, cycleStartDay: Long, paise: Long) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().apply {
+            if (paise > 0) putLong("income_$cycleStartDay", paise) else remove("income_$cycleStartDay")
+        }.apply()
+    }
+
     const val BUDGET_ALERTS = "budget_alerts"
     const val NIGHTLY_SUMMARY = "nightly_summary"
     const val BILL_REMINDERS = "bill_reminders"

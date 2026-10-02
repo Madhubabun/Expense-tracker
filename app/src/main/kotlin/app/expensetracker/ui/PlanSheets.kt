@@ -170,12 +170,13 @@ fun RepeatSheet(state: AppState, editing: Repeat?, onDone: () -> Unit) {
     var amount by remember { mutableStateOf(plain(editing?.amountPaise ?: 0)) }
     var percent by remember { mutableStateOf(if ((editing?.pct ?: 0) > 0) editing!!.pct.toString() else "10") }
     var category by remember { mutableStateOf(editing?.category ?: defaultCategory(rtype)) }
-    var day by remember { mutableStateOf((editing?.dayOfMonth ?: LocalDate.now().dayOfMonth).toString()) }
+    var day by remember { mutableStateOf(((editing?.dayOfMonth ?: LocalDate.now().dayOfMonth).takeIf { it <= 31 } ?: 1).toString()) }
+    var lastWorking by remember { mutableStateOf(editing?.dayOfMonth == app.expensetracker.core.RepeatPlan.LAST_WORKING_DAY || (editing == null && false)) }
     var confirmDelete by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
     val paise = parseRupees(amount)
     val pct = percent.trim().toIntOrNull()?.takeIf { it in 1..100 }
-    val dom = day.trim().toIntOrNull()?.takeIf { it in 1..31 }
+    val dom = if (lastWorking) app.expensetracker.core.RepeatPlan.LAST_WORKING_DAY else day.trim().toIntOrNull()?.takeIf { it in 1..31 }
     val tithe = rtype == "Tithe"
     val type = if (rtype == "Salary") TxnType.CREDIT else TxnType.DEBIT
 
@@ -185,6 +186,7 @@ fun RepeatSheet(state: AppState, editing: Repeat?, onDone: () -> Unit) {
             RepeatTypes.forEach { t ->
                 Choice("${repeatEmoji(t)} $t", rtype == t) {
                     rtype = t
+                    if (t == "Salary") lastWorking = true
                     category = defaultCategory(t)
                     if (title.isBlank() || title in RepeatTypes) title = if (t == "Other") "" else t
                 }
@@ -202,10 +204,15 @@ fun RepeatSheet(state: AppState, editing: Repeat?, onDone: () -> Unit) {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
             )
         }
-        OutlinedTextField(
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Choice("On a fixed day", !lastWorking) { lastWorking = false }
+            Choice("Last working day", lastWorking) { lastWorking = true }
+        }
+        if (!lastWorking) OutlinedTextField(
             day, { day = it }, label = { Text("Day of the month (1–31)") }, singleLine = true, isError = dom == null,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
         )
+        else Text("Falls on the last Monday to Friday of each month, like a salary.", color = Pal.muted, fontSize = 12.sp)
         CategoryPicker(state, category, { category = it }, { creating = true })
         Text(
             "You get a reminder at 9 am the day before and on the day. When the bank message arrives it is matched to this repeat and counted once. Short months use their last day.",
@@ -246,5 +253,22 @@ fun InvestSheet(state: AppState, editing: app.expensetracker.data.Investment?, o
         if (editing != null) TextButton(onClick = { if (confirmDelete) { state.deleteInvestment(editing); onDone() } else confirmDelete = true }) {
             Text(if (confirmDelete) "Tap again to delete" else "Delete", color = Pal.bad)
         }
+    }
+}
+
+/** Type this pay cycle's income yourself. It replaces what the app worked out from your bank messages. */
+@Composable
+fun IncomeSheet(state: AppState, onDone: () -> Unit) {
+    var text by remember { mutableStateOf(plain(state.cycleIncome())) }
+    val paise = parseRupees(text)
+    AppSheet(onDone) {
+        Text("Income until payday", color = Pal.fg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Type what you have to live on until your next salary. Safe to spend and tithe use it.", color = Pal.muted, fontSize = 13.sp)
+        OutlinedTextField(
+            text, { text = it }, label = { Text("Income (₹)") }, singleLine = true, isError = text.isNotBlank() && paise == null,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+        )
+        GradientButton("Save", enabled = paise != null && paise > 0) { state.setCycleIncome(paise!!); onDone() }
+        if (state.incomeTyped) TextButton(onClick = { state.setCycleIncome(0); onDone() }) { Text("Use what the app detected", color = Pal.accent) }
     }
 }

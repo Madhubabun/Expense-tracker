@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 class SafeToSpendTest {
     @Test
     fun repeatsAndSpendingComeOffIncomeAndTheRestIsSplitOverTheDaysLeft() {
-        val r = SafeToSpend.compute(8_500_000, 0, 3_000_000, 4_900_000, 320_000, LocalDate.of(2026, 10, 2))
+        val r = SafeToSpend.compute(8_500_000, 0, 3_000_000, 4_900_000, 320_000, 30)
         assertEquals(3_280_000, r.leftPaise)
         assertEquals(30, r.daysLeft)
         assertEquals(109_333, r.perDayPaise)
@@ -19,7 +19,7 @@ class SafeToSpendTest {
 
     @Test
     fun withoutAnyIncomeTheBudgetIsTheStartingPoint() {
-        val r = SafeToSpend.compute(0, 0, 3_000_000, 500_000, 100_000, LocalDate.of(2026, 10, 31))
+        val r = SafeToSpend.compute(0, 0, 3_000_000, 500_000, 100_000, 1)
         assertTrue(r.usingBudget)
         assertEquals(2_400_000, r.leftPaise)
         assertEquals(1, r.daysLeft)
@@ -27,7 +27,7 @@ class SafeToSpendTest {
 
     @Test
     fun overspendingShowsNegativeLeftButNeverANegativeDailyAmount() {
-        val r = SafeToSpend.compute(1_000_000, 0, 0, 900_000, 300_000, LocalDate.of(2026, 10, 10))
+        val r = SafeToSpend.compute(1_000_000, 0, 0, 900_000, 300_000, 21)
         assertEquals(-200_000, r.leftPaise)
         assertEquals(0, r.perDayPaise)
     }
@@ -64,5 +64,25 @@ class SafeToSpendTest {
         assertEquals(7, s.bars.size)
         assertEquals(20_000, s.bars[5].spentPaise)
         assertEquals(d.minusDays(1), Reports.shift(Period.DAY, d, -1))
+    }
+
+    @Test
+    fun paydayIsTheLastWorkingDayAndCyclesRunPaydayToPayday() {
+        assertEquals(LocalDate.of(2026, 10, 30), PayCycle.payday(YearMonth.of(2026, 10))) // 31 Oct is a Saturday
+        assertEquals(LocalDate.of(2026, 9, 30), PayCycle.payday(YearMonth.of(2026, 9)))
+        assertEquals(LocalDate.of(2027, 1, 29), PayCycle.payday(YearMonth.of(2027, 1))) // 31 Jan 2027 is a Sunday
+        val s = PayCycle.span(LocalDate.of(2026, 10, 2))
+        assertEquals(LocalDate.of(2026, 9, 30), s.start)
+        assertEquals(LocalDate.of(2026, 10, 29), s.end)
+        assertEquals(28, PayCycle.daysLeft(LocalDate.of(2026, 10, 2)))
+        assertEquals(LocalDate.of(2026, 10, 30), PayCycle.span(LocalDate.of(2026, 10, 30)).start)
+        assertEquals(1, PayCycle.daysLeft(LocalDate.of(2026, 10, 29)))
+    }
+
+    @Test
+    fun lastWorkingDayRepeatLandsOnPaydayAndMatchesASalaryThatArrivesThen() {
+        assertEquals(LocalDate.of(2026, 10, 30), RepeatPlan.occurrence(YearMonth.of(2026, 10), RepeatPlan.LAST_WORKING_DAY))
+        assertTrue(RepeatPlan.matches(LocalDate.of(2026, 10, 30), 9_000_000, RepeatPlan.LAST_WORKING_DAY, 9_000_000, 0))
+        assertEquals(LocalDate.of(2026, 9, 30), RepeatPlan.nearestOccurrence(LocalDate.of(2026, 9, 29), RepeatPlan.LAST_WORKING_DAY))
     }
 }

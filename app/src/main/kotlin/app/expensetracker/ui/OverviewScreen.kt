@@ -1,5 +1,6 @@
 package app.expensetracker.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +11,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,6 +42,7 @@ fun OverviewScreen(state: AppState, period: Period, offset: Int, onPeriod: (Peri
     val summary = Reports.summarize(state.reportTxns(), period, anchor)
     val safe = state.safe
     val need = state.needsCategory
+    var editIncome by remember { mutableStateOf(false) }
     val inRange = state.txns.filter { val d = LocalDate.ofEpochDay(it.epochDay); !d.isBefore(summary.start) && !d.isAfter(summary.end) }
 
     Column(
@@ -61,21 +67,25 @@ fun OverviewScreen(state: AppState, period: Period, offset: Int, onPeriod: (Peri
 
         Card {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("SAFE TO SPEND THIS MONTH", color = Pal.muted, fontSize = 11.sp, letterSpacing = 1.sp)
+                Text("SAFE TO SPEND UNTIL PAYDAY · ${state.payday.format(shortDay).uppercase()}", color = Pal.muted, fontSize = 11.sp, letterSpacing = 1.sp)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text("Left in total", color = Pal.muted, fontSize = 12.sp)
                         Text(signedRupees(safe.leftPaise), color = if (safe.leftPaise > 0) Pal.good else Pal.bad, fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
                     }
                     Column(Modifier.weight(1f)) {
-                        Text("Per day, ${safe.daysLeft} ${if (safe.daysLeft == 1) "day" else "days"} left", color = Pal.muted, fontSize = 12.sp)
+                        Text("Per day, ${safe.daysLeft} ${if (safe.daysLeft == 1) "day" else "days"} to payday", color = Pal.muted, fontSize = 12.sp)
                         Text(short(safe.perDayPaise), color = if (safe.perDayPaise > 0) Pal.good else Pal.bad, fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
                     }
                 }
-                Line(if (safe.usingBudget) "Monthly budget" else "Income this month", short(safe.incomePaise), Pal.fg)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (safe.usingBudget) "Monthly budget" else if (state.incomeTyped) "Income (typed by you)" else "Income this pay cycle", color = Pal.muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    Text(short(safe.incomePaise), color = Pal.fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("  Edit", color = Pal.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable { editIncome = true })
+                }
                 Line("Repeats still to pay", "−" + short(safe.repeatsLeftPaise), Pal.bad)
                 Line("Spent so far", "−" + short(safe.spentPaise), Pal.bad)
-                if (safe.usingBudget) Text("No income yet this month, so this starts from your budget. Add a Salary repeat in Plans for a truer picture.", color = Pal.muted, fontSize = 11.sp)
+                if (safe.usingBudget) Text("No income known yet, so this starts from your budget. Tap Edit to type your income, or add a Salary repeat in Plans.", color = Pal.muted, fontSize = 11.sp)
             }
         }
 
@@ -90,6 +100,8 @@ fun OverviewScreen(state: AppState, period: Period, offset: Int, onPeriod: (Peri
                 }
             }
         }
+
+        if (editIncome) IncomeSheet(state) { editIncome = false }
 
         SectionTitle("Latest")
         if (inRange.isEmpty()) {
@@ -126,6 +138,6 @@ private fun DueRow(state: AppState, d: RepeatDue, today: LocalDate) {
             Text(whenText, color = if (d.overdue) Pal.bad else if (days <= 1L) Pal.accent else Pal.muted, fontSize = 12.sp)
         }
         Text((if (d.repeat.type == TxnType.DEBIT) "−" else "+") + short(d.amountPaise), color = if (d.repeat.type == TxnType.DEBIT) Pal.fg else Pal.good, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-        if (d.day.month == today.month) SmallButton("Paid") { state.markPaid(d.repeat, true) }
+        SmallButton("Paid") { state.markPaid(d, true) }
     }
 }
