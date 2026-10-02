@@ -45,6 +45,14 @@ object SmsParser {
     private val refRegex =
         Regex("""\b(?:ref(?:erence)?(?:\s*(?:no|number))?\.?|utr|rrn)\s*[:\-]?\s*(\d{6,})""", RegexOption.IGNORE_CASE)
 
+    // "ACH-DR-Groww-00008QHNQDMBX": the shop name, then the debit's own id.
+    private val achRegex = Regex(
+        """(?i)\bACH[-\s]?(?:DR|D)[-\s]+([A-Za-z][A-Za-z0-9 &.']{1,30}?)[-\s]+([A-Za-z0-9]{8,})\b""",
+    )
+    private val towardsRegex = Regex("""(?i)\btowards\s+([A-Za-z][A-Za-z0-9 &.']{1,30}?)\s+(?:for|of|with)\b""")
+    private val mandateWord = Regex("""(?i)\b(nach|ecs|umrn|mandate)\b""")
+    private val processedWord = Regex("""(?i)\b(successfully\s+processed|has\s+been\s+processed)\b""")
+
     private val toLineRegex = Regex("""(?im)^\s*to\s*:?\s+(.+?)\s*$""")
     private val toInlineRegex = Regex(
         """(?i)\bto\s+(?:vpa\s+)?([A-Za-z0-9@._&' -]{2,40}?)(?=\s+(?:on|ref|upi|via|at)\b|\s*[.\n,]|$)""",
@@ -109,9 +117,10 @@ object SmsParser {
             merchant = merchant,
             bank = detectBank(text, sender),
             account = accountRegex.find(text)?.groupValues?.get(1),
-            ref = refRegex.find(text)?.groupValues?.get(1),
+            ref = achRegex.find(text)?.groupValues?.get(2) ?: refRegex.find(text)?.groupValues?.get(1),
             epochDay = findDate(text)?.toEpochDay(),
             suggestedCategory = category,
+            confirmation = type == TxnType.DEBIT && mandateWord.containsMatchIn(text) && processedWord.containsMatchIn(text),
         )
     }
 
@@ -125,6 +134,8 @@ object SmsParser {
     }
 
     private fun debitMerchant(text: String): String? {
+        achRegex.find(text)?.let { clean(it.groupValues[1])?.let { n -> return n } }
+        towardsRegex.find(text)?.let { clean(it.groupValues[1])?.let { n -> return n } }
         toLineRegex.find(text)?.let { clean(it.groupValues[1])?.let { n -> return n } }
         toInlineRegex.find(text)?.let { m ->
             val n = clean(m.groupValues[1])

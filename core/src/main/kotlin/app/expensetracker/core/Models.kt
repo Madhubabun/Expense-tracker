@@ -53,4 +53,9 @@ data class ParsedTxn(
     /** Transaction date written in the SMS, as days since 1970-01-01. Null if none was found. */
     val epochDay: Long?,
     val suggestedCategory: String?,
+    /**
+     * True for the second notice banks send about a mandate debit ("NACH debit towards X ... successfully
+     * processed"). It repeats a debit that already had its own alert, so it must not count again.
+     */
+    val confirmation: Boolean = false,
 )

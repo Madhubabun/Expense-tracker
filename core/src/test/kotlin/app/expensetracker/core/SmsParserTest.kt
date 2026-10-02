@@ -129,4 +129,29 @@ Query? Call 18001035577""",
         assertEquals("Transport", Categorizer.suggest("Uber India", "", TxnType.DEBIT))
         assertNull(Categorizer.suggest("RAMESH K", "", TxnType.DEBIT))
     }
+
+    @Test
+    fun axisAchDebitAlertNamesTheShopAndKeepsItsOwnId() {
+        val sms = "Debit INR 2000.00\nAxis Bank A/c XX5530\n02-10-26 07:50:56\nACH-DR-Groww-00008QHNQDMBX\n" +
+            "WhatsApp BAL to 917036165000\nNot You? SMS BLOCKALL CustID to 919951860002"
+        val t = SmsParser.parse(sms)!!
+        assertEquals(200_000L, t.amountPaise)
+        assertEquals(TxnType.DEBIT, t.type)
+        assertEquals("Groww", t.merchant)
+        assertEquals("00008QHNQDMBX", t.ref)
+        assertEquals("5530", t.account)
+        assertEquals("Axis", t.bank)
+        assertEquals(java.time.LocalDate.of(2026, 10, 2).toEpochDay(), t.epochDay)
+        assertEquals(false, t.confirmation)
+    }
+
+    @Test
+    fun nachConfirmationIsMarkedSoItIsNotCountedTwice() {
+        val sms = "NACH debit towards Groww for INR 2,000.00 with UMRN UTIB7020809200003 has been successfully processed in A/c no. XX5530 today - Axis Bank"
+        val t = SmsParser.parse(sms)!!
+        assertEquals(200_000L, t.amountPaise)
+        assertEquals("Groww", t.merchant)
+        assertEquals("5530", t.account)
+        assertEquals(true, t.confirmation)
+    }
 }

@@ -60,7 +60,7 @@ data class Category(val name: String, val emoji: String, val color: Long, val im
 
 /** All data lives in this one SQLite file on the phone. Nothing is sent anywhere. */
 class Db private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 7) {
+    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 8) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -83,6 +83,7 @@ class Db private constructor(context: Context) :
                 receipt TEXT,
                 currency TEXT NOT NULL DEFAULT 'INR',
                 orig_paise INTEGER NOT NULL DEFAULT 0,
+                pair_state INTEGER NOT NULL DEFAULT 0,
                 dedup TEXT UNIQUE,
                 created_at INTEGER NOT NULL
             )""",
@@ -126,6 +127,7 @@ class Db private constructor(context: Context) :
             db.execSQL("ALTER TABLE txn ADD COLUMN orig_paise INTEGER NOT NULL DEFAULT 0")
         }
         if (oldVersion < 7) createWordCategories(db)
+        if (oldVersion < 8) db.execSQL("ALTER TABLE txn ADD COLUMN pair_state INTEGER NOT NULL DEFAULT 0")
     }
 
     /** Words from shop names and your notes, and how often each went with a category. Lets the app guess next time. */
@@ -292,6 +294,36 @@ class Db private constructor(context: Context) :
         return true
     }
 
+    /**
+     * Cleans up confirmations that were counted before pairing existed. Each item is a parsed confirmation SMS and
+     * the time it arrived. The spend that came from it is removed when a separate alert already covers the same debit.
+     * Returns how many spends were removed.
+     */
+    @Synchronized
+    fun dedupeConfirmations(items: List<Pair<ParsedTxn, Long>>): Int {
+        val db = writableDatabase
+        val confirmTimes = items.map { it.second }.toSet()
+        var removed = 0
+        for ((p, at) in items) {
+            val account = ensureSmsAccount(db, p.bank, p.account)
+            if (account == 0L) continue
+            val row = db.rawQuery(
+                "SELECT id, epoch_day, category FROM txn WHERE at_ms = ? AND amount_paise = ? AND account_id = ? AND source = 'sms' AND pair_state != 2 LIMIT 1",
+                arrayOf(at.toString(), p.amountPaise.toString(), account.toString()),
+            ).use { if (it.moveToFirst()) Triple(it.getLong(0), it.getLong(1), it.getString(2)) else null } ?: continue
+            val alert = db.rawQuery(
+                "SELECT id, at_ms FROM txn WHERE id != ? AND amount_paise = ? AND type = ? AND account_id = ? AND source = 'sms' AND pair_state = 0 AND ABS(epoch_day - ?) <= 1 ORDER BY at_ms",
+                arrayOf(row.first.toString(), p.amountPaise.toString(), p.type.name, account.toString(), row.second.toString()),
+            ).use { c -> buildList { while (c.moveToNext()) add(c.getLong(0) to c.getLong(1)) } }
+                .firstOrNull { it.second !in confirmTimes }?.first ?: continue
+            if (row.third.isNotEmpty()) db.execSQL("UPDATE txn SET category = ? WHERE id = ? AND category = ''", arrayOf(row.third, alert))
+            db.execSQL("UPDATE txn SET pair_state = 2 WHERE id = ?", arrayOf(alert))
+            db.delete("txn", "id = ?", arrayOf(row.first.toString()))
+            removed++
+        }
+        return removed
+    }
+
     fun setTags(txnId: Long, tags: String) {
         writableDatabase.execSQL("UPDATE txn SET tags = ? WHERE id = ?", arrayOf(tags, txnId))
     }
@@ -387,6 +419,27 @@ class Db private constructor(context: Context) :
     @Synchronized
     fun insertParsed(p: ParsedTxn, fallbackEpochDay: Long, atMillis: Long, source: String, dedupSeed: String): Long {
         val dedup = p.ref?.let { "ref:$it" } ?: ("h:" + sha256(dedupSeed))
+        // Banks often send an alert and later a "processed" confirmation for the same debit. Pair them so
+        // the money is counted once. pair_state: 0 alert waiting, 1 confirmation waiting, 2 paired.
+        val accountId = ensureSmsAccount(writableDatabase, p.bank, p.account)
+        val day = p.epochDay ?: fallbackEpochDay
+        if (accountId != 0L && p.type == TxnType.DEBIT) {
+            val wanted = if (p.confirmation) 0 else 1
+            val match = writableDatabase.rawQuery(
+                "SELECT id FROM txn WHERE account_id = ? AND amount_paise = ? AND type = 'DEBIT' AND source = 'sms' AND pair_state = ? AND ABS(epoch_day - ?) <= 1 ORDER BY at_ms LIMIT 1",
+                arrayOf(accountId.toString(), p.amountPaise.toString(), wanted.toString(), day.toString()),
+            ).use { if (it.moveToFirst()) it.getLong(0) else -1L }
+            if (match > 0) {
+                val v = ContentValues().apply { put("pair_state", 2) }
+                if (!p.confirmation) {
+                    // The alert is the fuller message: fill in what the confirmation row lacked.
+                    p.merchant?.let { m -> writableDatabase.execSQL("UPDATE txn SET merchant = ? WHERE id = ? AND (merchant IS NULL OR merchant = '')", arrayOf(m, match)) }
+                    p.ref?.let { r -> writableDatabase.execSQL("UPDATE txn SET ref = ? WHERE id = ? AND ref IS NULL", arrayOf(r, match)) }
+                }
+                writableDatabase.update("txn", v, "id = ?", arrayOf(match.toString()))
+                return -1
+            }
+        }
         val learned = p.merchant?.let { learnedCategory(it) }
         val category = learned ?: p.suggestedCategory?.takeIf { it.isNotEmpty() } ?: p.merchant?.let { suggestFromWords(it) }.orEmpty()
         val values = ContentValues().apply {
@@ -402,7 +455,8 @@ class Db private constructor(context: Context) :
             put("category", category)
             put("comment", "")
             put("source", source)
-            put("account_id", ensureSmsAccount(writableDatabase, p.bank, p.account))
+            put("account_id", accountId)
+            put("pair_state", if (p.confirmation) 1 else 0)
             put("dedup", dedup)
             put("created_at", System.currentTimeMillis())
         }

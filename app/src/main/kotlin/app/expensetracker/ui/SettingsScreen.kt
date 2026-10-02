@@ -165,6 +165,18 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
             Column {
                 SectionTitle("SMS and data")
                 SettingRow("Old messages", "Pull in your past bank SMS once") { SmallButton("Import", primary = true) { if (smsGranted()) runImport() else smsPermission.launch(Manifest.permission.READ_SMS) } }
+                SettingRow("Fix double counting", "Remove repeats of the same bank debit") {
+                    SmallButton("Fix") {
+                        if (!smsGranted()) { smsPermission.launch(Manifest.permission.READ_SMS) } else scope.launch {
+                            busy = true
+                            status = "Looking for repeated debits…"
+                            val n = withContext(Dispatchers.IO) { runCatching { SmsProcessor.cleanDuplicates(context) } }
+                            state.refresh()
+                            status = n.fold({ if (it == 0) "No repeats found." else "Removed $it repeated ${if (it == 1) "spend" else "spends"}." }, { "Could not check: ${it.message}" })
+                            busy = false
+                        }
+                    }
+                }
                 SettingRow("Needs a category", "${state.needsCategory.size} spends waiting") { SmallButton("Review") { onReviewNeeds() } }
                 SettingRow("Alert preview", "Send yourself a sample notification") {
                     SmallButton("Preview") {
