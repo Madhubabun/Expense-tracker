@@ -10,6 +10,8 @@ import app.expensetracker.core.Categories
 import app.expensetracker.core.ReportTxn
 import app.expensetracker.core.TxnKind
 import app.expensetracker.core.TxnType
+import app.expensetracker.data.Account
+import app.expensetracker.data.AccountKind
 import app.expensetracker.data.CategoryImages
 import app.expensetracker.data.Category
 import app.expensetracker.data.Db
@@ -39,6 +41,9 @@ class AppState(private val context: Context) {
     var categoryBudgets by mutableStateOf<Map<String, Long>>(emptyMap())
         private set
 
+    var accounts by mutableStateOf<List<Account>>(emptyList())
+        private set
+
     private val images = HashMap<String, Bitmap?>()
 
     init {
@@ -51,6 +56,7 @@ class AppState(private val context: Context) {
         hiddenCount = allTxns.size - txns.size
         categories = db.categories()
         categoryBudgets = db.categoryBudgets()
+        accounts = db.accounts()
         runCatching { app.expensetracker.TodayWidget.refresh(context) }
     }
 
@@ -85,8 +91,9 @@ class AppState(private val context: Context) {
 
     val needsCategory: List<Txn> get() = txns.filter { it.category.isEmpty() && it.kind == TxnKind.NORMAL }
 
-    fun save(id: Long, category: String, comment: String) {
+    fun save(id: Long, category: String, comment: String, accountId: Long? = null) {
         db.setCategoryAndComment(id, category, comment)
+        if (accountId != null) db.setTxnAccount(id, accountId)
         refresh()
         runCatching { app.expensetracker.Alerts.checkBudgets(context) }
     }
@@ -96,8 +103,8 @@ class AppState(private val context: Context) {
         refresh()
     }
 
-    fun addManual(amountPaise: Long, type: TxnType, day: LocalDate, category: String, comment: String) {
-        db.insertManual(amountPaise, type, day.toEpochDay(), category, comment, null)
+    fun addManual(amountPaise: Long, type: TxnType, day: LocalDate, category: String, comment: String, accountId: Long = db.cashAccountId()) {
+        db.insertManual(amountPaise, type, day.toEpochDay(), category, comment, null, accountId)
         refresh()
         runCatching { app.expensetracker.Alerts.checkBudgets(context) }
     }
@@ -128,4 +135,27 @@ class AppState(private val context: Context) {
         CategoryImages.delete(context, c.image)
         refresh()
     }
+
+    fun account(id: Long): Account? = accounts.firstOrNull { it.id == id }
+
+    /** Opening balance plus everything received minus everything spent in that wallet since tracking started. */
+    fun balanceOf(a: Account): Long =
+        a.openingPaise + txns.filter { it.accountId == a.id }.sumOf { if (it.type == TxnType.CREDIT) it.amountPaise else -it.amountPaise }
+
+    fun addAccount(name: String, kind: AccountKind, openingPaise: Long, color: Long) {
+        db.addAccount(name.trim(), kind, openingPaise, color)
+        refresh()
+    }
+
+    fun updateAccount(a: Account, name: String, kind: AccountKind, openingPaise: Long, color: Long) {
+        db.updateAccount(a.id, name.trim(), kind, openingPaise, color)
+        refresh()
+    }
+
+    fun deleteAccount(a: Account) {
+        db.deleteAccount(a.id)
+        refresh()
+    }
+
+    val cashId: Long get() = accounts.firstOrNull { it.kind == AccountKind.CASH }?.id ?: 0L
 }

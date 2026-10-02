@@ -107,7 +107,7 @@ fun CategoryTile(cat: Category?, state: AppState, size: Dp = 44.dp, modifier: Mo
 
 @Composable
 fun ScreenTitle(eyebrow: String, title: String, trailing: @Composable () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+    Row(Modifier.fillMaxWidth().padding(end = 48.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f)) {
             Text(eyebrow.uppercase(), color = Pal.muted, fontSize = 12.sp, letterSpacing = 1.sp)
             Text(title, color = Pal.fg, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
@@ -128,9 +128,13 @@ fun HeroCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 
 @Composable
 fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    // Frosted-glass look: a see-through fill and a bright top edge that fades down.
+    val shape = RoundedCornerShape(24.dp)
     Box(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Pal.surface)
-            .border(1.dp, Pal.line, RoundedCornerShape(24.dp)).padding(18.dp),
+        modifier.fillMaxWidth().clip(shape)
+            .background(Brush.verticalGradient(listOf(Pal.surface.copy(alpha = .82f), Pal.surface.copy(alpha = .6f))), shape)
+            .border(1.dp, Brush.verticalGradient(listOf(Pal.fg.copy(alpha = .22f), Pal.fg.copy(alpha = .05f))), shape)
+            .padding(18.dp),
     ) { content() }
 }
 

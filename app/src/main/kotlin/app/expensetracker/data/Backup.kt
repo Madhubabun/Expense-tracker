@@ -15,7 +15,7 @@ import java.io.File
  */
 object Backup {
     private const val VERSION = 1
-    private val TABLES = listOf("txn", "category", "merchant_category", "category_budget")
+    private val TABLES = listOf("txn", "category", "merchant_category", "category_budget", "account")
 
     fun export(context: Context): String {
         val db = Db.get(context).database()
@@ -51,6 +51,7 @@ object Backup {
         } finally {
             db.endTransaction()
         }
+        Db.get(context).ensureCash()
         val images = File(context.filesDir, "category-images").apply { mkdirs() }
         val cats = root.optJSONArray("category") ?: JSONArray()
         for (i in 0 until cats.length()) {

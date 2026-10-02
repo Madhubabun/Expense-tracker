@@ -48,6 +48,7 @@ private fun Txn.countsTowardSpend() = kind == TxnKind.NORMAL && category !in Cat
 fun PeriodScreen(state: AppState, period: Period, onEdit: (Txn) -> Unit) {
     val today = LocalDate.now()
     var offset by rememberSaveable(period) { mutableStateOf(0) }
+    var calendar by rememberSaveable { mutableStateOf(false) }
     val anchor = Reports.shift(period, today, offset.toLong())
     val all = state.reportTxns()
     val summary = Reports.summarize(all, period, anchor)
@@ -121,6 +122,14 @@ fun PeriodScreen(state: AppState, period: Period, onEdit: (Txn) -> Unit) {
                         Box(Modifier.fillMaxWidth((pct / 100f).coerceIn(0f, 1f)).height(8.dp).clip(CircleShape).background(Color.White))
                     }
                 }
+            }
+        }
+
+        if (period == Period.MONTH) {
+            ViewToggle(calendar) { calendar = it }
+            if (calendar) {
+                MonthCalendar(state, java.time.YearMonth.from(anchor), today, onEdit)
+                return@Column
             }
         }
 

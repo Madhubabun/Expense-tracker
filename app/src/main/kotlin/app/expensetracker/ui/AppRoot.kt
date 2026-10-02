@@ -2,6 +2,7 @@ package app.expensetracker.ui
 
 import android.Manifest
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -28,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -38,7 +42,7 @@ import app.expensetracker.core.Period
 import app.expensetracker.data.Txn
 
 private enum class Tab(val label: String, val icon: String) {
-    TODAY("Today", "☀️"), WEEK("Week", "📅"), MONTH("Month", "🗓️"), YEAR("Year", "📈"), SETTINGS("Settings", "⚙️"),
+    TODAY("Today", "☀️"), WEEK("Week", "📅"), MONTH("Month", "🗓️"), YEAR("Year", "📈"), WALLETS("Wallets", "👛"),
 }
 
 @Composable
@@ -50,6 +54,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
     var adding by remember { mutableStateOf(false) }
     var newCategory by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
+    var settingsOpen by remember { mutableStateOf(false) }
 
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
@@ -71,8 +76,20 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
         }
     }
 
+    // Soft colour glows sit behind everything so the glass cards have something to frost.
+    val glow = if (Pal.dark) .30f else .16f
     Scaffold(
-        containerColor = Pal.bg,
+        modifier = Modifier.background(Pal.bg).drawBehind {
+            drawCircle(
+                Brush.radialGradient(listOf(Pal.accent.copy(alpha = glow), Color.Transparent), center = Offset(size.width * .95f, size.height * .1f), radius = size.width * .9f),
+                radius = size.width * .9f, center = Offset(size.width * .95f, size.height * .1f),
+            )
+            drawCircle(
+                Brush.radialGradient(listOf(Pal.pink.copy(alpha = glow * .8f), Color.Transparent), center = Offset(size.width * .05f, size.height * .75f), radius = size.width * .8f),
+                radius = size.width * .8f, center = Offset(size.width * .05f, size.height * .75f),
+            )
+        },
+        containerColor = Color.Transparent,
         bottomBar = {
             NavigationBar(containerColor = Pal.surface) {
                 Tab.entries.forEach { t ->
@@ -96,13 +113,14 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
                 Tab.WEEK -> PeriodScreen(state, Period.WEEK) { editing = it }
                 Tab.MONTH -> PeriodScreen(state, Period.MONTH) { editing = it }
                 Tab.YEAR -> PeriodScreen(state, Period.YEAR) { editing = it }
-                Tab.SETTINGS -> SettingsScreen(
-                    state,
-                    onNewCategory = { newCategory = true },
-                    onReviewNeeds = { state.needsCategory.firstOrNull()?.let { editing = it } },
-                )
+                Tab.WALLETS -> WalletsScreen(state)
             }
-            if (tab != Tab.SETTINGS) {
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 12.dp).size(40.dp).clip(CircleShape)
+                    .background(Pal.surface2).clickable { settingsOpen = true },
+                contentAlignment = Alignment.Center,
+            ) { Text("⚙️", fontSize = 18.sp) }
+            if (tab != Tab.WALLETS) {
                 Box(
                     Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 80.dp).size(48.dp).clip(CircleShape)
                         .background(Pal.surface2).clickable { searching = true },
@@ -120,11 +138,25 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
         }
     }
 
+    if (settingsOpen) {
+        BackHandler { settingsOpen = false }
+        Box(Modifier.fillMaxSize().background(Pal.bg).statusBarsPadding()) {
+            SettingsScreen(
+                state,
+                onNewCategory = { newCategory = true },
+                onReviewNeeds = { settingsOpen = false; state.needsCategory.firstOrNull()?.let { editing = it } },
+            )
+            Text(
+                "Close", color = Pal.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 16.dp).clickable { settingsOpen = false },
+            )
+        }
+    }
     if (searching) SearchScreen(state, onEdit = { editing = it }, onClose = { searching = false })
     editing?.let { txn ->
         EditTxnSheet(
             state, txn,
-            onSave = { category, comment -> state.save(txn.id, category, comment); editing = null },
+            onSave = { category, comment, accountId -> state.save(txn.id, category, comment, accountId); editing = null },
             onDelete = { state.delete(txn.id); editing = null },
             onDismiss = { editing = null },
         )
@@ -132,7 +164,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit) {
     if (adding) {
         AddSpendSheet(
             state,
-            onAdd = { amount, type, day, category, note -> state.addManual(amount, type, day, category, note); adding = false },
+            onAdd = { amount, type, day, category, note, accountId -> state.addManual(amount, type, day, category, note, accountId); adding = false },
             onDismiss = { adding = false },
         )
     }

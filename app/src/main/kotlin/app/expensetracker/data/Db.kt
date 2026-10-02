@@ -26,6 +26,22 @@ data class Txn(
     val category: String,
     val comment: String,
     val source: String,
+    /** The wallet this belongs to, or 0 for none. */
+    val accountId: Long = 0,
+)
+
+enum class AccountKind(val label: String, val emoji: String) {
+    CASH("Cash", "💵"), BANK("Bank", "🏦"), CARD("Credit card", "💳"), WALLET("Wallet", "👛"),
+}
+
+/** A place money sits: cash, a bank account, a card or an e-wallet. [key] ties SMS to it (bank plus last digits). */
+data class Account(
+    val id: Long,
+    val name: String,
+    val kind: AccountKind,
+    val openingPaise: Long,
+    val color: Long,
+    val key: String?,
 )
 
 /**
@@ -36,7 +52,7 @@ data class Category(val name: String, val emoji: String, val color: Long, val im
 
 /** All data lives in this one SQLite file on the phone. Nothing is sent anywhere. */
 class Db private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 3) {
+    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 4) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -54,6 +70,7 @@ class Db private constructor(context: Context) :
                 category TEXT NOT NULL DEFAULT '',
                 comment TEXT NOT NULL DEFAULT '',
                 source TEXT NOT NULL,
+                account_id INTEGER NOT NULL DEFAULT 0,
                 dedup TEXT UNIQUE,
                 created_at INTEGER NOT NULL
             )""",
@@ -63,6 +80,7 @@ class Db private constructor(context: Context) :
         db.execSQL("CREATE TABLE merchant_category (merchant TEXT PRIMARY KEY, category TEXT NOT NULL)")
         createCategories(db)
         createCategoryBudgets(db)
+        createAccounts(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -71,6 +89,113 @@ class Db private constructor(context: Context) :
             createCategories(db)
         }
         if (oldVersion < 3) createCategoryBudgets(db)
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE txn ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0")
+            createAccounts(db)
+            // Give every spend read from an SMS its wallet, and put hand-added ones in Cash.
+            val cash = cashAccountId(db)
+            db.execSQL("UPDATE txn SET account_id = $cash WHERE source = 'manual'")
+            val rows = db.rawQuery("SELECT DISTINCT bank, account FROM txn WHERE source != 'manual'", null).use { c ->
+                buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) }
+            }
+            rows.forEach { (bank, acct) ->
+                val id = ensureSmsAccount(db, bank, acct)
+                db.execSQL(
+                    "UPDATE txn SET account_id = ? WHERE source != 'manual' AND bank IS ? AND account IS ?",
+                    arrayOf<Any?>(id, bank, acct),
+                )
+            }
+        }
+    }
+
+    private fun createAccounts(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE account (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                opening_paise INTEGER NOT NULL DEFAULT 0,
+                color INTEGER NOT NULL,
+                acct_key TEXT UNIQUE,
+                sort INTEGER NOT NULL DEFAULT 0
+            )""",
+        )
+        db.execSQL(
+            "INSERT INTO account(name, kind, opening_paise, color, acct_key, sort) VALUES ('Cash', 'CASH', 0, ${0xFF2EF2E0}, 'cash', 0)",
+        )
+    }
+
+    private fun cashAccountId(db: SQLiteDatabase): Long =
+        db.rawQuery("SELECT id FROM account WHERE acct_key = 'cash'", null).use { if (it.moveToFirst()) it.getLong(0) else 0L }
+
+    /** Finds or makes the wallet for a bank and its last digits. Returns 0 when the SMS named neither. */
+    private fun ensureSmsAccount(db: SQLiteDatabase, bank: String?, account: String?): Long {
+        if (bank.isNullOrBlank() && account.isNullOrBlank()) return 0L
+        val key = (bank.orEmpty() + "|" + account.orEmpty()).lowercase()
+        db.rawQuery("SELECT id FROM account WHERE acct_key = ?", arrayOf(key)).use { if (it.moveToFirst()) return it.getLong(0) }
+        val name = listOfNotNull(bank?.takeIf { it.isNotBlank() }, account?.takeIf { it.isNotBlank() }?.let { "••$it" }).joinToString(" ")
+        val colors = listOf(0xFF4DA3FF, 0xFFB18CFF, 0xFFFF4FD8, 0xFFFFB938, 0xFFB6FF5C, 0xFFFF8A4C)
+        val count = db.rawQuery("SELECT COUNT(*) FROM account", null).use { it.moveToFirst(); it.getInt(0) }
+        val v = ContentValues().apply {
+            put("name", name); put("kind", AccountKind.BANK.name); put("opening_paise", 0)
+            put("color", colors[count % colors.size]); put("acct_key", key); put("sort", count)
+        }
+        return db.insert("account", null, v)
+    }
+
+    fun accounts(): List<Account> =
+        readableDatabase.query("account", null, null, null, null, null, "sort ASC, id ASC").use { c ->
+            buildList {
+                while (c.moveToNext()) add(
+                    Account(
+                        id = c.getLong(c.getColumnIndexOrThrow("id")),
+                        name = c.getString(c.getColumnIndexOrThrow("name")),
+                        kind = AccountKind.valueOf(c.getString(c.getColumnIndexOrThrow("kind"))),
+                        openingPaise = c.getLong(c.getColumnIndexOrThrow("opening_paise")),
+                        color = c.getLong(c.getColumnIndexOrThrow("color")),
+                        key = c.getString(c.getColumnIndexOrThrow("acct_key")),
+                    ),
+                )
+            }
+        }
+
+    fun cashAccountId(): Long = cashAccountId(readableDatabase)
+
+    /** After restoring an older backup that had no wallets, make sure Cash exists again. */
+    fun ensureCash() {
+        if (cashAccountId() == 0L) {
+            writableDatabase.execSQL(
+                "INSERT INTO account(name, kind, opening_paise, color, acct_key, sort) VALUES ('Cash', 'CASH', 0, ${0xFF2EF2E0}, 'cash', 0)",
+            )
+        }
+    }
+
+    @Synchronized
+    fun addAccount(name: String, kind: AccountKind, openingPaise: Long, color: Long): Long {
+        val next = readableDatabase.rawQuery("SELECT COALESCE(MAX(sort), 0) + 1 FROM account", null).use { it.moveToFirst(); it.getInt(0) }
+        val v = ContentValues().apply {
+            put("name", name); put("kind", kind.name); put("opening_paise", openingPaise); put("color", color); put("sort", next)
+        }
+        return writableDatabase.insert("account", null, v)
+    }
+
+    fun updateAccount(id: Long, name: String, kind: AccountKind, openingPaise: Long, color: Long) {
+        val v = ContentValues().apply {
+            put("name", name); put("kind", kind.name); put("opening_paise", openingPaise); put("color", color)
+        }
+        writableDatabase.update("account", v, "id = ?", arrayOf(id.toString()))
+    }
+
+    /** Spends in a deleted wallet stay, with no wallet. Cash can't be deleted. */
+    @Synchronized
+    fun deleteAccount(id: Long) {
+        if (id == cashAccountId()) return
+        writableDatabase.execSQL("UPDATE txn SET account_id = 0 WHERE account_id = ?", arrayOf(id))
+        writableDatabase.delete("account", "id = ?", arrayOf(id.toString()))
+    }
+
+    fun setTxnAccount(txnId: Long, accountId: Long) {
+        writableDatabase.execSQL("UPDATE txn SET account_id = ? WHERE id = ?", arrayOf(accountId, txnId))
     }
 
     private fun createCategoryBudgets(db: SQLiteDatabase) {
@@ -171,6 +296,7 @@ class Db private constructor(context: Context) :
             put("category", category)
             put("comment", "")
             put("source", source)
+            put("account_id", ensureSmsAccount(writableDatabase, p.bank, p.account))
             put("dedup", dedup)
             put("created_at", System.currentTimeMillis())
         }
@@ -184,6 +310,7 @@ class Db private constructor(context: Context) :
         category: String,
         comment: String,
         merchant: String?,
+        accountId: Long = cashAccountId(),
     ): Long {
         val values = ContentValues().apply {
             put("amount_paise", amountPaise)
@@ -196,6 +323,7 @@ class Db private constructor(context: Context) :
             put("category", category)
             put("comment", comment)
             put("source", "manual")
+            put("account_id", accountId)
             put("created_at", System.currentTimeMillis())
         }
         return writableDatabase.insert("txn", null, values)
@@ -269,6 +397,7 @@ class Db private constructor(context: Context) :
         category = getString(getColumnIndexOrThrow("category")),
         comment = getString(getColumnIndexOrThrow("comment")),
         source = getString(getColumnIndexOrThrow("source")),
+        accountId = getLong(getColumnIndexOrThrow("account_id")),
     )
 
     private fun sha256(s: String): String =

@@ -52,6 +52,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.expensetracker.core.TxnType
+import app.expensetracker.data.Account
+import app.expensetracker.data.AccountKind
 import app.expensetracker.data.Category
 import app.expensetracker.data.Txn
 import java.math.BigDecimal
@@ -117,10 +119,29 @@ private fun CategoryPicker(state: AppState, selected: String, onSelect: (String)
     }
 }
 
+/** Pick which wallet a spend belongs to. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: String) -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
+private fun AccountPicker(state: AppState, selected: Long, onSelect: (Long) -> Unit) {
+    val p = Pal
+    Text("Paid from", color = p.muted, fontSize = 12.sp)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        state.accounts.forEach { a ->
+            val on = a.id == selected
+            Text(
+                a.kind.emoji + " " + a.name, color = p.fg, fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                modifier = Modifier.clip(CircleShape).background(if (on) Color(a.color).copy(alpha = .28f) else p.surface2)
+                    .border(1.dp, if (on) Color(a.color) else p.line, CircleShape).clickable { onSelect(a.id) }.padding(horizontal = 12.dp, vertical = 7.dp),
+            )
+        }
+    }
+}
+
+@Composable
+fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: String, accountId: Long) -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
     var category by remember(txn.id) { mutableStateOf(txn.category) }
     var comment by remember(txn.id) { mutableStateOf(txn.comment) }
+    var accountId by remember(txn.id) { mutableStateOf(txn.accountId) }
     var creating by remember { mutableStateOf(false) }
     val sign = if (txn.type == TxnType.DEBIT) "Spent" else "Received"
 
@@ -129,7 +150,8 @@ fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: 
         Text(txn.merchant ?: txn.bank ?: "Bank SMS", color = Pal.muted)
         CategoryPicker(state, category, { category = it }, { creating = true })
         OutlinedTextField(comment, { comment = it }, label = { Text("Comment") }, modifier = Modifier.fillMaxWidth())
-        GradientButton("Save") { onSave(category.trim(), comment.trim()) }
+        AccountPicker(state, accountId) { accountId = it }
+        GradientButton("Save") { onSave(category.trim(), comment.trim(), accountId) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = onDelete) { Text("Delete", color = Pal.bad) }
             TextButton(onClick = onDismiss) { Text("Cancel", color = Pal.muted) }
@@ -139,12 +161,13 @@ fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: 
 }
 
 @Composable
-fun AddSpendSheet(state: AppState, onAdd: (Long, TxnType, LocalDate, String, String) -> Unit, onDismiss: () -> Unit) {
+fun AddSpendSheet(state: AppState, onAdd: (Long, TxnType, LocalDate, String, String, Long) -> Unit, onDismiss: () -> Unit) {
     var amount by remember { mutableStateOf("") }
     var type by remember { mutableStateOf(TxnType.DEBIT) }
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
     var category by remember { mutableStateOf("Food") }
     var note by remember { mutableStateOf("") }
+    var accountId by remember { mutableStateOf(state.cashId) }
     var creating by remember { mutableStateOf(false) }
 
     val paise = runCatching { BigDecimal(amount.replace(",", "")).movePointRight(2).toLong() }.getOrNull()
@@ -169,8 +192,9 @@ fun AddSpendSheet(state: AppState, onAdd: (Long, TxnType, LocalDate, String, Str
         )
         CategoryPicker(state, category, { category = it }, { creating = true })
         OutlinedTextField(note, { note = it }, label = { Text("What was it? (optional)") }, modifier = Modifier.fillMaxWidth())
+        AccountPicker(state, accountId) { accountId = it }
         OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true, isError = day == null, modifier = Modifier.fillMaxWidth())
-        GradientButton("Add spend", enabled = valid) { onAdd(paise!!, type, day!!, category, note.trim()) }
+        GradientButton("Add spend", enabled = valid) { onAdd(paise!!, type, day!!, category, note.trim(), accountId) }
     }
     if (creating) NewCategorySheet(state, onDone = { name -> if (name != null) category = name; creating = false })
 }
@@ -241,5 +265,55 @@ fun NewCategorySheet(state: AppState, onDone: (String?) -> Unit) {
             }
         }
         TextButton(onClick = { onDone(null) }, modifier = Modifier.fillMaxWidth()) { Text("Cancel", color = Pal.muted) }
+    }
+}
+
+/** Add a wallet, or edit one. Cash can be renamed but not deleted. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AccountSheet(state: AppState, editing: Account?, onDone: () -> Unit) {
+    var name by remember { mutableStateOf(editing?.name ?: "") }
+    var kind by remember { mutableStateOf(editing?.kind ?: AccountKind.BANK) }
+    var opening by remember {
+        mutableStateOf(editing?.openingPaise?.let { if (it == 0L) "" else BigDecimal(it).movePointLeft(2).stripTrailingZeros().toPlainString() } ?: "")
+    }
+    var color by remember { mutableStateOf(editing?.color ?: SWATCHES[3]) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val paise = if (opening.isBlank()) 0L else runCatching { BigDecimal(opening.replace(",", "")).movePointRight(2).toLong() }.getOrNull()
+
+    AppSheet(onDone) {
+        Text(if (editing == null) "New wallet" else "Edit wallet", color = Pal.fg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        OutlinedTextField(name, { name = it }, label = { Text("Name (for example HDFC savings)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            AccountKind.entries.forEach { k ->
+                val on = kind == k
+                Text(
+                    k.emoji + " " + k.label, color = Pal.fg, fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier.clip(CircleShape).background(if (on) Pal.accent.copy(alpha = .22f) else Pal.surface2)
+                        .border(1.dp, if (on) Pal.accent else Pal.line, CircleShape).clickable { kind = k }.padding(horizontal = 14.dp, vertical = 8.dp),
+                )
+            }
+        }
+        OutlinedTextField(
+            opening, { opening = it }, label = { Text("Balance today (₹, optional)") }, singleLine = true, isError = paise == null,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SWATCHES.forEach { c ->
+                Box(
+                    Modifier.size(30.dp).clip(CircleShape).background(Color(c))
+                        .border(if (c == color) 3.dp else 0.dp, Pal.fg, CircleShape).clickable { color = c },
+                )
+            }
+        }
+        GradientButton(if (editing == null) "Add wallet" else "Save", enabled = name.isNotBlank() && paise != null) {
+            if (editing == null) state.addAccount(name, kind, paise!!, color) else state.updateAccount(editing, name, kind, paise!!, color)
+            onDone()
+        }
+        if (editing != null && editing.kind != AccountKind.CASH) {
+            TextButton(onClick = { if (confirmDelete) { state.deleteAccount(editing); onDone() } else confirmDelete = true }) {
+                Text(if (confirmDelete) "Tap again: spends stay, just unassigned" else "Delete wallet", color = Pal.bad)
+            }
+        }
     }
 }
