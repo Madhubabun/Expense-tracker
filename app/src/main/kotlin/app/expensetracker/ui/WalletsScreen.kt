@@ -37,6 +37,7 @@ import app.expensetracker.data.Repeat
 import java.time.LocalDate
 
 /** Wallets: cash, bank accounts, cards. Goals, loans and tags will join this screen. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun WalletsScreen(state: AppState) {
     var editing by remember { mutableStateOf<Account?>(null) }
