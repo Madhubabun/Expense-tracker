@@ -26,3 +26,14 @@ saves the amount, and asks you for a category and comment. Everything stays on t
 
 - `core/` pure Kotlin: SMS parser, categorizer and report maths. Has unit tests: `CORE_ONLY=1 ./gradlew :core:test`
 - `app/` the Android app (Jetpack Compose, plain SQLite).
+
+## Features
+
+- Reads bank and UPI SMS, notification with category buttons and a comment box
+- Today, Week, Month (list and calendar), Year, and a Wallets tab; Settings behind the gear
+- Wallets with balances, goals, loans with reminders, monthly repeats, tags, receipt photos
+- Budgets (overall and per category) with alerts, 9 pm summary, bill reminders
+- Search, split bills, voice entry, other currencies (you set the rate)
+- Excel and PDF reports, CSV, backup and restore, home screen widget, app lock
+
+Everything stays on the phone; the app has no internet permission.
