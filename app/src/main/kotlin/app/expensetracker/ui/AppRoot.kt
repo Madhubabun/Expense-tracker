@@ -55,6 +55,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
     var newCategory by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
+    var insights by remember { mutableStateOf<Pair<Period, java.time.LocalDate>?>(null) }
     var voice by remember { mutableStateOf<app.expensetracker.core.VoiceEntry?>(null) }
     var micNote by remember { mutableStateOf("") }
     val speak = rememberSpeech(onFailed = { micNote = "Couldn't hear that. Try again." }) { said ->
@@ -123,9 +124,9 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
                 Tab.TODAY -> TodayScreen(state) { editing = it }
-                Tab.WEEK -> PeriodScreen(state, Period.WEEK) { editing = it }
-                Tab.MONTH -> PeriodScreen(state, Period.MONTH) { editing = it }
-                Tab.YEAR -> PeriodScreen(state, Period.YEAR) { editing = it }
+                Tab.WEEK -> PeriodScreen(state, Period.WEEK, { p, a -> insights = p to a }) { editing = it }
+                Tab.MONTH -> PeriodScreen(state, Period.MONTH, { p, a -> insights = p to a }) { editing = it }
+                Tab.YEAR -> PeriodScreen(state, Period.YEAR, { p, a -> insights = p to a }) { editing = it }
                 Tab.WALLETS -> WalletsScreen(state)
             }
             Box(
@@ -171,6 +172,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
             )
         }
     }
+    insights?.let { (p, a) -> InsightsScreen(state, p, a) { insights = null } }
     if (searching) SearchScreen(state, onEdit = { editing = it }, onClose = { searching = false })
     editing?.let { txn ->
         EditTxnSheet(
