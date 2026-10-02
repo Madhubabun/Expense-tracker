@@ -28,6 +28,7 @@ object Prefs {
     const val NIGHTLY_SUMMARY = "nightly_summary"
     const val BILL_REMINDERS = "bill_reminders"
     const val APP_LOCK = "app_lock"
+    const val UNUSUAL_ALERTS = "unusual_alerts"
 
     fun flag(context: Context, key: String, default: Boolean): Boolean =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(key, default)

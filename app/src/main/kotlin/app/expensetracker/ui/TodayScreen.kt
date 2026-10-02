@@ -89,6 +89,29 @@ fun TodayScreen(state: AppState, onEdit: (Txn) -> Unit) {
             }
         }
 
+        val stats = state.todayStats()
+        Card {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val safe = stats.outlook.safeTodayPaise
+                Text("SAFE TO SPEND TODAY", color = Pal.muted, fontSize = 11.sp, letterSpacing = 1.sp)
+                Text(
+                    if (safe > 0) rupees(safe).removeSuffix(".00") else "Budget's used up",
+                    color = if (safe > 0) Pal.good else Pal.bad, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp,
+                )
+                Text(
+                    if (stats.outlook.availablePaise > 0)
+                        "About ${rupees(stats.outlook.perDayPaise).removeSuffix(".00")} a day for the next ${stats.outlook.daysLeft} days" +
+                            if (stats.committedPaise > 0) ", with ${rupees(stats.committedPaise).removeSuffix(".00")} set aside for bills" else ""
+                    else "You're past this month's budget once upcoming bills are counted.",
+                    color = Pal.muted, fontSize = 12.sp,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    if (stats.streak >= 1) Pill("🔥 ${stats.streak} no-spend ${if (stats.streak == 1) "day" else "days"}", tint = Pal.pink)
+                    Pill("Week score ${stats.score} · " + (if (stats.score >= 80) "Great" else if (stats.score >= 55) "Okay" else "Needs care"), tint = Pal.accent)
+                }
+            }
+        }
+
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             SectionTitle("Today’s spends", Modifier.weight(1f))
             Text("Tap to tag · swipe ← to edit", color = Pal.muted, fontSize = 11.sp, letterSpacing = .5.sp)

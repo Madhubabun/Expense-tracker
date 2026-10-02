@@ -30,6 +30,7 @@ object SmsProcessor {
         if (id > 0 && notify) {
             db.get(id)?.let { Notifier.show(context, it) }
             runCatching { Alerts.checkBudgets(context) }
+            runCatching { Alerts.checkUnusual(context, id) }
             runCatching { TodayWidget.refresh(context) }
         }
         return id

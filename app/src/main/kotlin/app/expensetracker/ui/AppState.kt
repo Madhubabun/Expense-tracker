@@ -7,6 +7,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import app.expensetracker.core.Categories
+import app.expensetracker.core.Forecast
+import app.expensetracker.core.Outlook
+import app.expensetracker.core.Period
+import app.expensetracker.core.Reports
+import app.expensetracker.core.Streaks
 import app.expensetracker.core.ReportTxn
 import app.expensetracker.core.TxnKind
 import app.expensetracker.core.TxnType
@@ -74,6 +79,7 @@ class AppState(private val context: Context) {
         categories = db.categories()
         categoryBudgets = db.categoryBudgets()
         accounts = db.accounts()
+        billList = runCatching { app.expensetracker.Alerts.detectBills(context, LocalDate.now().toEpochDay()).sortedBy { it.nextDay } }.getOrDefault(emptyList())
         goals = Plans.goals(context)
         loans = Plans.loans(context)
         repeats = Plans.repeats(context)
@@ -94,8 +100,10 @@ class AppState(private val context: Context) {
         categoryBudgets = db.categoryBudgets()
     }
 
+    private var billList = emptyList<app.expensetracker.core.RecurringBill>()
+
     /** Monthly bills spotted from all history, hidden spends included. Soonest first. */
-    fun bills() = app.expensetracker.Alerts.detectBills(context, LocalDate.now().toEpochDay()).sortedBy { it.nextDay }
+    fun bills() = billList
 
     fun category(name: String): Category? = categories.firstOrNull { it.name == name }
 
@@ -242,4 +250,38 @@ class AppState(private val context: Context) {
     }
 
     fun accountName(id: Long): String = account(id)?.name ?: ""
+
+    data class TodayStats(val outlook: Outlook, val committedPaise: Long, val spentToday: Long, val streak: Int, val score: Int)
+
+    /** Safe-to-spend, the month-end forecast, the no-spend streak and the weekly score. */
+    fun todayStats(): TodayStats {
+        val today = LocalDate.now()
+        val all = reportTxns()
+        val spentToday = all.filter { it.countable && it.type == TxnType.DEBIT && it.date == today }.sumOf { it.amountPaise }
+        val monthSpent = Reports.summarize(all, Period.MONTH, today).spentPaise
+        val monthEnd = today.withDayOfMonth(today.lengthOfMonth()).toEpochDay()
+        val repeatTitles = repeats.map { it.title.lowercase() }.toSet()
+        val billsLater = billList.filter { it.nextDay in today.toEpochDay()..monthEnd && it.label.lowercase() !in repeatTitles }
+        val repeatsLater = repeats.filter { it.type == TxnType.DEBIT && minOf(it.dayOfMonth, today.lengthOfMonth()) > today.dayOfMonth }
+        val committed = billsLater.sumOf { it.amountPaise } + repeatsLater.sumOf { it.amountPaise }
+        val fixed = billList.map { it.label.lowercase() }.toSet() + repeatTitles
+        val monthStart = today.withDayOfMonth(1).toEpochDay()
+        val fixedSpent = txns.filter {
+            it.type == TxnType.DEBIT && it.kind == TxnKind.NORMAL && it.category !in Categories.excludedFromTotals &&
+                it.epochDay >= monthStart && it.merchant?.lowercase() in fixed
+        }.sumOf { it.amountPaise }
+        val outlook = Forecast.outlook(budgetPaise, monthSpent, spentToday, committed, (monthSpent - fixedSpent).coerceAtLeast(0), today)
+
+        val spendDays = all.filter { it.countable && it.type == TxnType.DEBIT }.map { it.date }.toSet()
+        val start = if (startDay > 0) LocalDate.ofEpochDay(startDay) else (txns.minOfOrNull { it.epochDay }?.let { LocalDate.ofEpochDay(it) } ?: today)
+        val streak = Streaks.noSpendStreak(spendDays, today, start)
+        val daily = all.filter { it.countable && it.type == TxnType.DEBIT }.groupBy({ it.date }, { it.amountPaise }).mapValues { it.value.sum() }
+        val week = txns.filter { it.type == TxnType.DEBIT && it.epochDay > today.toEpochDay() - 7 }
+        val tagged = if (week.isEmpty()) 1f else week.count { it.category.isNotEmpty() }.toFloat() / week.size
+        val score = Streaks.weeklyScore(daily, budgetPaise / today.lengthOfMonth(), tagged, today, start)
+        return TodayStats(outlook, committed, spentToday, streak, score)
+    }
+
+    /** Suggests a category from what you typed, using shops and notes you tagged before. */
+    fun suggestCategory(text: String): String? = db.suggestFromWords(text)?.takeIf { c -> pickable.any { it.name == c } }
 }

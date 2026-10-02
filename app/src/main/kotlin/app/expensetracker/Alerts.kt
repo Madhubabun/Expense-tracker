@@ -90,6 +90,20 @@ object Alerts {
         }
     }
 
+    /** Tells you when a fresh spend is much bigger than what you usually pay at that shop or in that category. */
+    fun checkUnusual(context: Context, txnId: Long) {
+        if (!Prefs.flag(context, Prefs.UNUSUAL_ALERTS, true)) return
+        val db = Db.get(context)
+        val t = db.get(txnId) ?: return
+        if (t.type != TxnType.DEBIT || t.kind != TxnKind.NORMAL) return
+        val usual = app.expensetracker.core.Anomaly.usual(t.amountPaise, db.recentSpendAmounts(t.merchant, t.category, t.id)) ?: return
+        post(
+            context, 7400 + (t.id % 500).toInt(), CH_BUDGET,
+            "Bigger than usual: ${money(t.amountPaise)}",
+            "${t.merchant ?: t.category.ifEmpty { "This spend" }} is usually around ${money(usual)}. If that is right, ignore this.",
+        )
+    }
+
     /** The 9 pm note: today's total and how many spends still need a category. */
     fun nightlySummary(context: Context) {
         if (!Prefs.flag(context, Prefs.NIGHTLY_SUMMARY, true)) return

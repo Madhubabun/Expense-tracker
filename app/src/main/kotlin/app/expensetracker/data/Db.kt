@@ -60,7 +60,7 @@ data class Category(val name: String, val emoji: String, val color: Long, val im
 
 /** All data lives in this one SQLite file on the phone. Nothing is sent anywhere. */
 class Db private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 6) {
+    SQLiteOpenHelper(context.applicationContext, "expenses.db", null, 7) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -94,6 +94,7 @@ class Db private constructor(context: Context) :
         createCategoryBudgets(db)
         createAccounts(db)
         Plans.createTables(db)
+        createWordCategories(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -124,6 +125,52 @@ class Db private constructor(context: Context) :
             db.execSQL("ALTER TABLE txn ADD COLUMN currency TEXT NOT NULL DEFAULT 'INR'")
             db.execSQL("ALTER TABLE txn ADD COLUMN orig_paise INTEGER NOT NULL DEFAULT 0")
         }
+        if (oldVersion < 7) createWordCategories(db)
+    }
+
+    /** Words from shop names and your notes, and how often each went with a category. Lets the app guess next time. */
+    private fun createWordCategories(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE word_category (word TEXT NOT NULL, category TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (word, category))")
+    }
+
+    private val stopWords = setOf("the", "and", "for", "to", "from", "upi", "pay", "paid", "payment", "bank", "sent", "via", "ltd", "pvt", "india", "private", "limited", "with", "online")
+
+    private fun words(text: String): List<String> =
+        text.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 && it !in stopWords && !it.all { c -> c.isDigit() } }.distinct()
+
+    @Synchronized
+    private fun learnWords(text: String, category: String) {
+        if (category.isEmpty()) return
+        words(text).forEach { w ->
+            writableDatabase.execSQL("INSERT OR IGNORE INTO word_category(word, category, n) VALUES (?, ?, 0)", arrayOf(w, category))
+            writableDatabase.execSQL("UPDATE word_category SET n = n + 1 WHERE word = ? AND category = ?", arrayOf(w, category))
+        }
+    }
+
+    /** The category that most often went with the words in [text], or null when nothing was learned yet. */
+    fun suggestFromWords(text: String): String? {
+        val ws = words(text)
+        if (ws.isEmpty()) return null
+        val votes = HashMap<String, Int>()
+        ws.forEach { w ->
+            readableDatabase.rawQuery("SELECT category, n FROM word_category WHERE word = ?", arrayOf(w)).use { c ->
+                while (c.moveToNext()) votes.merge(c.getString(0), c.getInt(1), Int::plus)
+            }
+        }
+        val best = votes.maxByOrNull { it.value } ?: return null
+        return best.key.takeIf { best.value >= 2 }
+    }
+
+    /** Earlier spend amounts at the same shop (or in the same category when there is no shop), newest first. */
+    fun recentSpendAmounts(merchant: String?, category: String, excludeId: Long, limit: Int = 20): List<Long> {
+        val (where, args) = when {
+            !merchant.isNullOrBlank() -> "lower(merchant) = ?" to arrayOf(merchant.lowercase())
+            category.isNotEmpty() -> "category = ?" to arrayOf(category)
+            else -> return emptyList()
+        }
+        return readableDatabase.rawQuery(
+            "SELECT amount_paise FROM txn WHERE type = 'DEBIT' AND kind = 'NORMAL' AND id != $excludeId AND $where ORDER BY epoch_day DESC, id DESC LIMIT $limit", args,
+        ).use { c -> buildList { while (c.moveToNext()) add(c.getLong(0)) } }
     }
 
     private fun upgradeToV5(db: SQLiteDatabase) {
@@ -341,7 +388,7 @@ class Db private constructor(context: Context) :
     fun insertParsed(p: ParsedTxn, fallbackEpochDay: Long, atMillis: Long, source: String, dedupSeed: String): Long {
         val dedup = p.ref?.let { "ref:$it" } ?: ("h:" + sha256(dedupSeed))
         val learned = p.merchant?.let { learnedCategory(it) }
-        val category = learned ?: p.suggestedCategory.orEmpty()
+        val category = learned ?: p.suggestedCategory?.takeIf { it.isNotEmpty() } ?: p.merchant?.let { suggestFromWords(it) }.orEmpty()
         val values = ContentValues().apply {
             put("amount_paise", p.amountPaise)
             put("type", p.type.name)
@@ -422,6 +469,7 @@ class Db private constructor(context: Context) :
         }
         writableDatabase.update("txn", values, "id = ?", arrayOf(id.toString()))
         val merchant = t.merchant
+        learnWords((merchant ?: "") + " " + comment, category)
         if (category.isNotEmpty() && !merchant.isNullOrBlank()) {
             writableDatabase.execSQL(
                 "INSERT OR REPLACE INTO merchant_category(merchant, category) VALUES (?, ?)",

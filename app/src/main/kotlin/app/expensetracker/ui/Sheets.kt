@@ -216,6 +216,7 @@ fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntr
     var category by remember { mutableStateOf(initial?.category ?: "Food") }
     var note by remember { mutableStateOf(initial?.note ?: "") }
     var heard by remember { mutableStateOf("") }
+    var picked by remember { mutableStateOf(false) }
     val speak = rememberSpeech(onFailed = { heard = "Didn't catch that. Try again, or type it." }) { said ->
         val e = VoiceParser.parse(said)
         e.amountPaise?.let { amount = BigDecimal(it).movePointLeft(2).stripTrailingZeros().toPlainString() }
@@ -270,8 +271,12 @@ fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntr
             }
             if (currency != "INR" && paise != null) Text("≈ ${rupees(paise)} at ${state.rates[currency]} per $currency", color = Pal.muted, fontSize = 12.sp)
         }
-        CategoryPicker(state, category, { category = it }, { creating = true })
-        OutlinedTextField(note, { note = it }, label = { Text("What was it? (optional)") }, modifier = Modifier.fillMaxWidth())
+        CategoryPicker(state, category, { category = it; picked = true }, { creating = true })
+        OutlinedTextField(
+            note,
+            { note = it; if (!picked) state.suggestCategory(it)?.let { c -> category = c } },
+            label = { Text("What was it? (optional)") }, modifier = Modifier.fillMaxWidth(),
+        )
         AccountPicker(state, accountId) { accountId = it }
         TagField(state, tags) { tags = it }
         OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true, isError = day == null, modifier = Modifier.fillMaxWidth())

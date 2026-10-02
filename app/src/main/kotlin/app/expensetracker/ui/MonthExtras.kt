@@ -28,6 +28,26 @@ private val billDate = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH)
 /** Category budget progress and upcoming monthly bills, shown on the current month only. */
 @Composable
 fun MonthExtras(state: AppState, byCategory: List<CategoryTotal>, today: LocalDate) {
+    val stats = state.todayStats()
+    val o = stats.outlook
+    if (state.budgetPaise > 0) {
+        SectionTitle("Month-end forecast")
+        Card {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "You're heading for " + rupees(o.projectedPaise).removeSuffix(".00"),
+                    color = if (o.overBudget) Pal.bad else Pal.good, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    if (o.overBudget) "That is ${rupees(o.projectedPaise - state.budgetPaise).removeSuffix(".00")} over your ${rupees(state.budgetPaise).removeSuffix(".00")} budget. Spending about ${rupees(o.perDayPaise.coerceAtLeast(0)).removeSuffix(".00")} a day from here keeps you inside it."
+                    else "Inside your ${rupees(state.budgetPaise).removeSuffix(".00")} budget, with ${rupees((state.budgetPaise - o.projectedPaise).coerceAtLeast(0)).removeSuffix(".00")} to spare.",
+                    color = Pal.muted, fontSize = 13.sp,
+                )
+                Text("Based on your daily habit so far plus bills and repeats still to come.", color = Pal.muted, fontSize = 11.sp)
+            }
+        }
+    }
+
     val budgets = state.categoryBudgets
     if (budgets.isNotEmpty()) {
         SectionTitle("Category budgets")
