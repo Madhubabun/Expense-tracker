@@ -46,7 +46,7 @@ private fun Txn.countsTowardSpend() = kind == TxnKind.NORMAL && category !in Cat
 
 /** Week, month and year views. Same layout, different range. */
 @Composable
-fun PeriodScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period) -> Unit, onOffset: (Int) -> Unit, onInsights: (Period, LocalDate) -> Unit, onEdit: (Txn) -> Unit) {
+fun PeriodScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period) -> Unit, onOffset: (Int) -> Unit, onEdit: (Txn) -> Unit) {
     val today = LocalDate.now()
     var calendar by rememberSaveable { mutableStateOf(false) }
     val anchor = Reports.shift(period, today, offset.toLong())
@@ -119,17 +119,6 @@ fun PeriodScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period
         SectionTitle(when (period) { Period.DAY -> "Last 7 days"; Period.WEEK -> "Spending by day"; Period.MONTH -> "Spending by week"; Period.YEAR -> "Spending by month" })
         Card { SpendChart(summary.bars) }
 
-        Card(Modifier.clickable { onInsights(period, anchor) }) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("✨", fontSize = 26.sp)
-                Column(Modifier.weight(1f)) {
-                    Text("Insights and savings tips", color = Pal.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    Text("See what stands out and where you could save", color = Pal.muted, fontSize = 12.sp)
-                }
-                Text("›", color = Pal.muted, fontSize = 22.sp)
-            }
-        }
-
         if (period == Period.MONTH) {
             ViewToggle(calendar) { calendar = it }
             if (calendar) {
@@ -143,8 +132,6 @@ fun PeriodScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period
             Card { Donut(state, summary.byCategory, summary.spentPaise) }
         }
         Card { CategoryBars(state, summary.byCategory, summary.spentPaise) }
-
-        if (period == Period.MONTH && offset == 0) MonthExtras(state, summary.byCategory, today)
 
         SectionTitle(if (period == Period.YEAR) "By month" else "Day by day")
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -128,12 +129,14 @@ fun HeroCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 
 @Composable
 fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    // Frosted-glass look: a see-through fill and a bright top edge that fades down.
-    val shape = RoundedCornerShape(24.dp)
+    // Clay look: a soft puffy slab that catches light on its top-left edge and sinks into shadow bottom-right.
+    val shape = RoundedCornerShape(28.dp)
     Box(
-        modifier.fillMaxWidth().clip(shape)
-            .background(Brush.verticalGradient(listOf(Pal.surface.copy(alpha = .82f), Pal.surface.copy(alpha = .6f))), shape)
-            .border(1.dp, Brush.verticalGradient(listOf(Pal.fg.copy(alpha = .22f), Pal.fg.copy(alpha = .05f))), shape)
+        modifier.fillMaxWidth()
+            .shadow(12.dp, shape, ambientColor = Pal.accent.copy(alpha = .35f), spotColor = Pal.accent.copy(alpha = .25f))
+            .clip(shape)
+            .background(Brush.linearGradient(listOf(Pal.surface2, Pal.surface)), shape)
+            .border(1.5.dp, Brush.linearGradient(listOf(Pal.fg.copy(alpha = .30f), Pal.fg.copy(alpha = .04f), Color.Black.copy(alpha = .5f))), shape)
             .padding(18.dp),
     ) { content() }
 }

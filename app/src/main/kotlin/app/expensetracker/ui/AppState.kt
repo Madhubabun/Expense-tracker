@@ -89,13 +89,6 @@ class AppState(private val context: Context) {
     private val images = HashMap<String, Bitmap?>()
 
     init {
-        runCatching {
-            // One-off: merge the entries repeats used to make for themselves with their bank debits.
-            if (!Prefs.flag(context, "repeat_merge_v1", false)) {
-                Plans.mergeOldRepeatEntries(context)
-                Prefs.setFlag(context, "repeat_merge_v1", true)
-            }
-        }
         refresh()
     }
 
@@ -138,7 +131,6 @@ class AppState(private val context: Context) {
     /** Call after a restore: everything on disk changed underneath us. */
     fun reloadAll() {
         images.clear()
-        runCatching { Plans.applyRepeats(context) }
         startDay = Prefs.startDay(context)
         budgetPaise = Prefs.budgetPaise(context)
         refresh()
@@ -298,10 +290,14 @@ class AppState(private val context: Context) {
 
     fun deleteLoan(l: Loan) { Plans.deleteLoan(context, l.id); refresh() }
 
-    fun saveRepeat(r: Repeat?, title: String, amount: Long, type: TxnType, category: String, accountId: Long, day: Int, rtype: String = "Other", pct: Int = 0) {
-        Plans.saveRepeat(context, r?.id, title.trim(), amount, type, category, accountId, day, rtype, pct)
+    fun saveRepeat(r: Repeat?, title: String, amount: Long, type: TxnType, category: String, accountId: Long, day: Int, rtype: String = "Other", pct: Int = 0): Long {
+        val id = Plans.saveRepeat(context, r?.id, title.trim(), amount, type, category, accountId, day, rtype, pct)
         refresh()
+        return id
     }
+
+    /** Counts the turn of a repeat that was just logged as a spend as paid, so it is not asked for again. */
+    fun markRepeatLogged(id: Long, turn: LocalDate) { Plans.setPaid(context, id, turn, true); refresh() }
 
     /** Every repeat's turn this month with its amount worked out and whether it has been paid. */
     fun dues() = Plans.dues(context)

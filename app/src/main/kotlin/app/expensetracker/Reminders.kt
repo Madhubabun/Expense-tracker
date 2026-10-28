@@ -7,73 +7,71 @@ import android.content.Context
 import android.content.Intent
 import java.util.Calendar
 
-/** Wakes the app once a day at about 9 pm for the summary and bill reminders. */
+/**
+ * Three small alarms a day and nothing running in between: 9 am repeat reminders, and the 9 pm and 10 pm
+ * nudges to log the day's spends. Each one sets up the next one when it fires.
+ */
 object Reminders {
+    private const val NINE_PM = 77
+    private const val MORNING = 79
+    private const val TEN_PM = 80
+
     fun schedule(context: Context) {
+        // The 15-minute inbox scan of older versions is gone; make sure it is not left behind.
+        runCatching {
+            val old = PendingIntent.getBroadcast(
+                context, 78, Intent().setClassName(context, "app.expensetracker.CatchUpReceiver"),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE,
+            )
+            if (old != null) { context.getSystemService(AlarmManager::class.java).cancel(old); old.cancel() }
+        }
+        arm(context, NINE_PM, 21, DailyReceiver::class.java)
+        arm(context, TEN_PM, 22, NightReceiver::class.java)
+        arm(context, MORNING, 9, RepeatRemindReceiver::class.java)
+    }
+
+    /** Sets the next run of one alarm, at [hour] o'clock today or tomorrow. Setting it again replaces it. */
+    internal fun arm(context: Context, code: Int, hour: Int, target: Class<*>) {
         val am = context.getSystemService(AlarmManager::class.java)
-        // Already armed: setting them again on every launch would keep pushing the next run back.
-        fun armed(code: Int, target: Class<*>) = PendingIntent.getBroadcast(context, code, Intent(context, target), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE) != null
-        if (armed(77, DailyReceiver::class.java) && armed(78, CatchUpReceiver::class.java) && armed(79, RepeatRemindReceiver::class.java)) return
         val pending = PendingIntent.getBroadcast(
-            context, 77, Intent(context, DailyReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            context, code, Intent(context, target), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val first = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 21); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DAY_OF_YEAR, 1)
+        val next = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, hour); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            if (timeInMillis <= System.currentTimeMillis() + 60_000) add(Calendar.DAY_OF_YEAR, 1)
         }
-        // Inexact, so Android may shift it a little to save battery. Scheduling again replaces the old alarm.
-        am.setInexactRepeating(AlarmManager.RTC_WAKEUP, first.timeInMillis, AlarmManager.INTERVAL_DAY, pending)
-        // Every 15 minutes, check the inbox for bank messages that were missed while the phone was asleep.
-        val scan = PendingIntent.getBroadcast(
-            context, 78, Intent(context, CatchUpReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val morning = PendingIntent.getBroadcast(
-            context, 79, Intent(context, RepeatRemindReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val nineAm = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 9); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DAY_OF_YEAR, 1)
-        }
-        am.setInexactRepeating(AlarmManager.RTC_WAKEUP, nineAm.timeInMillis, AlarmManager.INTERVAL_DAY, morning)
-        am.setInexactRepeating(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + AlarmManager.INTERVAL_FIFTEEN_MINUTES, AlarmManager.INTERVAL_FIFTEEN_MINUTES, scan)
+        // Allowed to run while the phone dozes. Android may nudge it a little to save battery.
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.timeInMillis, pending)
+    }
+
+    internal fun run(context: Context, code: Int, hour: Int, target: Class<*>, work: () -> Unit) {
+        // Queue tomorrow's alarm first, so one failure never ends the reminders.
+        runCatching { arm(context, code, hour, target) }
+        runCatching(work)
     }
 }
 
 /** 9 am each day: reminders for repeats due today or tomorrow. */
 class RepeatRemindReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val pending = goAsync()
-        Thread {
-            try {
-                runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) }
-                runCatching { Alerts.repeatReminders(context) }
-            } finally { pending.finish() }
-        }.start()
+        Reminders.run(context, 79, 9, RepeatRemindReceiver::class.java) {
+            Alerts.repeatReminders(context)
+            app.expensetracker.TodayWidget.refresh(context)
+        }
     }
 }
 
-class CatchUpReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val pending = goAsync()
-        Thread {
-            try { runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) } } finally { pending.finish() }
-        }.start()
-    }
-}
-
+/** 9 pm: the first nudge to log today's spends. */
 class DailyReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val pending = goAsync()
-        Thread {
-            try {
-                runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) }
-                runCatching { Alerts.nightlySummary(context) }
-                runCatching { Alerts.billReminders(context) }
-                runCatching { Alerts.loanReminders(context) }
-                runCatching { app.expensetracker.data.Plans.applyRepeats(context) }
-                runCatching { TodayWidget.refresh(context) }
-            } finally { pending.finish() }
-        }.start()
+        Reminders.run(context, 77, 21, DailyReceiver::class.java) { Alerts.logReminder(context, late = false) }
+    }
+}
+
+/** 10 pm: the last nudge. */
+class NightReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        Reminders.run(context, 80, 22, NightReceiver::class.java) { Alerts.logReminder(context, late = true) }
     }
 }
 
@@ -82,12 +80,5 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         Reminders.schedule(context)
-        val pending = goAsync()
-        Thread {
-            try {
-                runCatching { app.expensetracker.data.SmsProcessor.catchUp(context) }
-                runCatching { TodayWidget.refresh(context) }
-            } finally { pending.finish() }
-        }.start()
     }
 }

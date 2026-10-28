@@ -88,8 +88,8 @@ internal fun AppSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 internal fun GradientButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     val p = Pal
     Box(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .background(if (enabled) Brush.horizontalGradient(listOf(p.accent, p.pink)) else Brush.horizontalGradient(listOf(p.surface2, p.surface2)))
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
+            .background(if (enabled) Brush.linearGradient(listOf(p.accent, p.pink)) else Brush.horizontalGradient(listOf(p.surface2, p.surface2)))
             .clickable(enabled = enabled, onClick = onClick).padding(15.dp),
         contentAlignment = Alignment.Center,
     ) { Text(text, color = if (enabled) Color.White else p.muted, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
@@ -125,6 +125,7 @@ internal fun CategoryPicker(state: AppState, selected: String, onSelect: (String
 data class NewSpend(
     val amountPaise: Long, val type: TxnType, val day: LocalDate, val category: String, val note: String,
     val accountId: Long, val tags: String, val currency: String, val origPaise: Long,
+    val repeat: Boolean = false,
 )
 
 /** Comma separated tags with one-tap suggestions from tags you already used. */
@@ -235,18 +236,10 @@ fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntr
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
     var category by remember { mutableStateOf(initial?.category ?: "Food") }
     var note by remember { mutableStateOf(initial?.note ?: "") }
-    var heard by remember { mutableStateOf("") }
     var picked by remember { mutableStateOf(false) }
-    val speak = rememberSpeech(onFailed = { heard = "Didn't catch that. Try again, or type it." }) { said ->
-        val e = VoiceParser.parse(said)
-        e.amountPaise?.let { amount = BigDecimal(it).movePointLeft(2).stripTrailingZeros().toPlainString() }
-        type = e.type
-        if (e.note.isNotEmpty()) note = e.note
-        e.category?.takeIf { c -> state.pickable.any { it.name == c } }?.let { category = it }
-        heard = "Heard: “$said”"
-    }
-    var accountId by remember { mutableStateOf(state.cashId) }
-    var tags by remember { mutableStateOf("") }
+    val accountId = state.cashId
+    val tags = ""
+    var repeat by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
 
     val typed = runCatching { BigDecimal(amount.replace(",", "")).movePointRight(2).toLong() }.getOrNull()
@@ -267,17 +260,10 @@ fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntr
                 )
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                amount, { amount = it }, label = { Text(if (currency == "INR") "Amount (₹)" else "Amount ($currency)") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f),
-            )
-            Text(
-                "🎤", fontSize = 22.sp,
-                modifier = Modifier.clip(CircleShape).background(Pal.surface2).clickable { speak() }.padding(12.dp),
-            )
-        }
-        if (heard.isNotEmpty()) Text(heard, color = Pal.muted, fontSize = 12.sp)
+        OutlinedTextField(
+            amount, { amount = it }, label = { Text(if (currency == "INR") "Amount (₹)" else "Amount ($currency)") }, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+        )
         if (state.rates.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 (listOf("INR") + state.rates.keys.sorted()).forEach { c ->
@@ -297,10 +283,17 @@ fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntr
             { note = it; if (!picked) state.suggestCategory(it)?.let { c -> category = c } },
             label = { Text("What was it? (optional)") }, modifier = Modifier.fillMaxWidth(),
         )
-        AccountPicker(state, accountId) { accountId = it }
-        TagField(state, tags) { tags = it }
         OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true, isError = day == null, modifier = Modifier.fillMaxWidth())
-        GradientButton(if (type == TxnType.CREDIT) "Add income" else "Add spend", enabled = valid) { onAdd(NewSpend(paise!!, type, day!!, category, note.trim(), accountId, cleanTags(tags), currency, if (currency == "INR") 0 else typed!!)) }
+        if (type == TxnType.DEBIT) {
+            Row(Modifier.fillMaxWidth().clickable { repeat = !repeat }, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Repeats every month", color = Pal.fg, fontSize = 15.sp)
+                    Text("EMI, rent, SIP… you get a reminder before it is due", color = Pal.muted, fontSize = 12.sp)
+                }
+                androidx.compose.material3.Switch(checked = repeat, onCheckedChange = { repeat = it })
+            }
+        }
+        GradientButton(if (type == TxnType.CREDIT) "Add income" else "Add spend", enabled = valid) { onAdd(NewSpend(paise!!, type, day!!, category, note.trim(), accountId, cleanTags(tags), currency, if (currency == "INR") 0 else typed!!, repeat = repeat && type == TxnType.DEBIT)) }
     }
     if (creating) NewCategorySheet(state, onDone = { name -> if (name != null) category = name; creating = false })
 }

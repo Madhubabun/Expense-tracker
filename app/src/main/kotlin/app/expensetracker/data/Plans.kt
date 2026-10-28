@@ -173,16 +173,17 @@ object Plans {
             }
         }
 
-    fun saveRepeat(context: Context, id: Long?, title: String, amount: Long, type: TxnType, category: String, accountId: Long, dayOfMonth: Int, rtype: String = "Other", pct: Int = 0) {
+    fun saveRepeat(context: Context, id: Long?, title: String, amount: Long, type: TxnType, category: String, accountId: Long, dayOfMonth: Int, rtype: String = "Other", pct: Int = 0): Long {
         val v = ContentValues().apply {
             put("title", title); put("amount_paise", amount); put("type", type.name); put("category", category)
             put("account_id", accountId); put("day_of_month", dayOfMonth); put("rtype", rtype); put("pct", pct)
         }
         if (id == null) {
             v.put("start_day", LocalDate.now().toEpochDay())
-            db(context).insert("repeat_txn", null, v)
+            return db(context).insert("repeat_txn", null, v)
         } else {
             db(context).update("repeat_txn", v, "id = ?", arrayOf(id.toString()))
+            return id
         }
     }
 
@@ -251,67 +252,32 @@ object Plans {
         return (now + next).sortedBy { it.day }
     }
 
-    /** Marks one turn of a repeat paid (or not). [turn] is the date of that turn. */
-    fun markPaid(context: Context, id: Long, turn: LocalDate, paid: Boolean) {
+    /** Marks one turn of a repeat paid (or not) without touching your spends. */
+    fun setPaid(context: Context, id: Long, turn: LocalDate, paid: Boolean) {
         db(context).execSQL("UPDATE repeat_txn SET paid_month = ? WHERE id = ?", arrayOf(if (paid) yearMonth(turn) else 0, id))
     }
 
     /**
-     * Called for each new bank message. When it is a repeat arriving (same amount, near its date) the repeat is
-     * marked paid for that month, the message takes the repeat's category and name, and any older entry the
-     * repeat made for itself is dropped so the money is counted once.
+     * The Paid button. Nothing reads the bank messages any more, so paying a repeat also records the spend for it,
+     * once per turn; undoing it takes that spend away again.
      */
-    fun matchIncoming(context: Context, txnId: Long): Boolean {
+    fun markPaid(context: Context, id: Long, turn: LocalDate, paid: Boolean) {
+        setPaid(context, id, turn, paid)
         val database = db(context)
-        val t = Db.get(context).get(txnId) ?: return false
-        if (t.source != "sms" || t.kind != TxnKind.NORMAL) return false
-        val day = LocalDate.ofEpochDay(t.epochDay)
-        val (received, expected) = monthIncome(context, day)
-        val match = repeats(context).firstOrNull { r ->
-            val turn = app.expensetracker.core.RepeatPlan.nearestOccurrence(day, r.dayOfMonth)
-            turn != null && r.type == t.type && r.paidMonth != yearMonth(turn) && app.expensetracker.core.RepeatPlan.matches(
-                day, t.amountPaise, r.dayOfMonth, app.expensetracker.core.RepeatPlan.amount(r.amountPaise, r.pct, received + expected), r.pct,
-            )
-        } ?: return false
-        val turnDay = app.expensetracker.core.RepeatPlan.nearestOccurrence(day, match.dayOfMonth) ?: day
-        database.execSQL("UPDATE repeat_txn SET paid_month = ? WHERE id = ?", arrayOf(yearMonth(turnDay), match.id))
-        if (t.category.isEmpty() && match.category.isNotEmpty()) database.execSQL("UPDATE txn SET category = ? WHERE id = ?", arrayOf(match.category, txnId))
-        if (t.merchant.isNullOrBlank()) database.execSQL("UPDATE txn SET merchant = ? WHERE id = ?", arrayOf(match.title, txnId))
-        database.execSQL("DELETE FROM txn WHERE source = 'repeat' AND dedup LIKE ? AND ABS(epoch_day - ?) <= 5", arrayOf("rep:${match.id}:%", t.epochDay))
-        return true
-    }
-
-    /**
-     * One-off tidy up of the time repeats made their own spends: each is merged with the bank debit that
-     * matches it. Entries with no matching bank message stay, so nothing paid in cash disappears.
-     * Returns how many were removed.
-     */
-    fun mergeOldRepeatEntries(context: Context): Int {
-        val database = db(context)
-        val all = repeats(context).associateBy { it.id }
-        val allTxns = Db.get(context).all()
-        val old = allTxns.filter { it.source == "repeat" }
-        var removed = 0
-        for (e in old) {
-            val rid = Regex("""rep:(\d+):""").find(dedupOf(database, e.id) ?: "")?.groupValues?.get(1)?.toLongOrNull() ?: continue
-            val r = all[rid] ?: continue
-            val day = LocalDate.ofEpochDay(e.epochDay)
-            val bank = allTxns.firstOrNull {
-                it.source == "sms" && it.type == e.type && it.kind == TxnKind.NORMAL &&
-                    app.expensetracker.core.RepeatPlan.matches(LocalDate.ofEpochDay(it.epochDay), it.amountPaise, r.dayOfMonth, e.amountPaise, 0) &&
-                    Math.abs(it.epochDay - e.epochDay) <= 5
-            } ?: continue
-            if (bank.category.isEmpty() && e.category.isNotEmpty()) database.execSQL("UPDATE txn SET category = ? WHERE id = ?", arrayOf(e.category, bank.id))
-            if (bank.merchant.isNullOrBlank()) database.execSQL("UPDATE txn SET merchant = ? WHERE id = ?", arrayOf(e.merchant ?: r.title, bank.id))
-            database.execSQL("DELETE FROM txn WHERE id = ?", arrayOf(e.id))
-            app.expensetracker.core.RepeatPlan.nearestOccurrence(day, r.dayOfMonth)?.let { turn ->
-                if (turn >= cycle().start && r.paidMonth != yearMonth(turn)) markPaid(context, r.id, turn, true)
-            }
-            removed++
+        val key = "rman:$id:${yearMonth(turn)}"
+        if (!paid) {
+            database.execSQL("DELETE FROM txn WHERE dedup = ?", arrayOf(key))
+            return
         }
-        return removed
+        val r = repeats(context).firstOrNull { it.id == id } ?: return
+        if (r.type != TxnType.DEBIT) return
+        val exists = database.rawQuery("SELECT 1 FROM txn WHERE dedup = ?", arrayOf(key)).use { it.moveToFirst() }
+        if (exists) return
+        val (received, expected) = monthIncome(context, turn)
+        val amount = app.expensetracker.core.RepeatPlan.amount(r.amountPaise, r.pct, received + expected)
+        val today = LocalDate.now()
+        val day = (if (turn.isAfter(today)) today else turn).toEpochDay()
+        val txnId = Db.get(context).insertManual(amount, TxnType.DEBIT, day, r.category, "", r.title, r.accountId)
+        if (txnId > 0) database.execSQL("UPDATE txn SET dedup = ? WHERE id = ?", arrayOf(key, txnId))
     }
-
-    private fun dedupOf(database: SQLiteDatabase, id: Long): String? =
-        database.rawQuery("SELECT dedup FROM txn WHERE id = ?", arrayOf(id.toString())).use { if (it.moveToFirst()) it.getString(0) else null }
 }

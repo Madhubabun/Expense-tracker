@@ -71,14 +71,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
     var newCategory by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
-    var insights by remember { mutableStateOf<Pair<Period, java.time.LocalDate>?>(null) }
     var voice by remember { mutableStateOf<app.expensetracker.core.VoiceEntry?>(null) }
-    var micNote by remember { mutableStateOf("") }
-    val speak = rememberSpeech(onFailed = { micNote = "Couldn't hear that. Try again." }) { said ->
-        micNote = ""
-        voice = app.expensetracker.core.VoiceParser.parse(said)
-        adding = true
-    }
 
     fun startIncome() {
         voice = app.expensetracker.core.VoiceEntry(null, app.expensetracker.core.TxnType.CREDIT, "", "Salary")
@@ -88,11 +81,9 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
         val wanted = buildList {
-            add(Manifest.permission.RECEIVE_SMS)
-            add(Manifest.permission.READ_SMS)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         }
-        permissions.launch(wanted.toTypedArray())
+        if (wanted.isNotEmpty()) permissions.launch(wanted.toTypedArray())
     }
 
     // A tap on a notification opens that transaction's editor.
@@ -145,9 +136,9 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
                 Tab.OVERVIEW -> OverviewScreen(state, period, offset, onPeriod, onOffset) { editing = it }
-                Tab.EXPENSES -> PeriodScreen(state, period, offset, onPeriod, onOffset, { p, a -> insights = p to a }) { editing = it }
+                Tab.EXPENSES -> PeriodScreen(state, period, offset, onPeriod, onOffset) { editing = it }
                 Tab.INCOME -> IncomeScreen(state, period, offset, onPeriod, onOffset, onAdd = { startIncome() }) { editing = it }
-                Tab.STATS -> StatsScreen(state, period, offset, onPeriod, onOffset) { p, a -> insights = p to a }
+                Tab.STATS -> StatsScreen(state, period, offset, onPeriod, onOffset)
                 Tab.PLANS -> PlansScreen(state)
             }
             Box(
@@ -156,13 +147,11 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
                 contentAlignment = Alignment.Center,
             ) { Text("⚙️", fontSize = 18.sp) }
             if (tab != Tab.PLANS) {
-                if (micNote.isNotEmpty()) Text(micNote, color = Pal.muted, fontSize = 12.sp, modifier = Modifier.align(Alignment.BottomStart).padding(16.dp).padding(bottom = 64.dp))
                 Row(
                     Modifier.align(Alignment.BottomEnd).padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Box(Modifier.size(46.dp).clip(CircleShape).background(Pal.surface2).clickable { speak() }, contentAlignment = Alignment.Center) { Text("🎤", fontSize = 19.sp) }
                     Box(Modifier.size(46.dp).clip(CircleShape).background(Pal.surface2).clickable { searching = true }, contentAlignment = Alignment.Center) { Text("🔍", fontSize = 19.sp) }
                     Row(
                         Modifier.clip(CircleShape).background(Brush.horizontalGradient(listOf(Pal.accent, Pal.pink)))
@@ -190,7 +179,6 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
             )
         }
     }
-    insights?.let { (p, a) -> InsightsScreen(state, p, a) { insights = null } }
     if (searching) SearchScreen(state, onEdit = { editing = it }, onClose = { searching = false })
     editing?.let { txn ->
         EditTxnSheet(
@@ -206,6 +194,12 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
             state,
             onAdd = { n ->
                 state.addManual(n.amountPaise, n.type, n.day, n.category, n.note, n.accountId, n.tags, n.currency, n.origPaise)
+                if (n.repeat && n.type == app.expensetracker.core.TxnType.DEBIT) {
+                    // Remember it as a monthly repeat; this month's turn is the spend just added, so it counts as paid.
+                    val title = n.note.ifBlank { n.category }.ifBlank { "Repeat" }
+                    val id = state.saveRepeat(null, title, n.amountPaise, n.type, n.category, n.accountId, n.day.dayOfMonth)
+                    state.markRepeatLogged(id, n.day)
+                }
                 adding = false; voice = null
                 // Show the period that holds what was just added, so it is not missed on another day.
                 offset = offsetFor(period, n.day)

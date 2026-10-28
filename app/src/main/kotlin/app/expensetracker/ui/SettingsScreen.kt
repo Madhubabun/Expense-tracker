@@ -41,9 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import app.expensetracker.Notifier
 import app.expensetracker.core.TxnType
-import app.expensetracker.data.SmsProcessor
 import app.expensetracker.data.Txn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -80,29 +78,6 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
     var status by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
 
-    fun smsGranted() = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
-
-    fun runImport() {
-        scope.launch {
-            busy = true
-            status = "Reading your SMS inbox…"
-            val result = withContext(Dispatchers.IO) { runCatching { SmsProcessor.importInbox(context) } }
-            state.refresh()
-            status = result.fold(
-                onSuccess = {
-                    "Scanned ${it.scanned} messages and added ${it.added} transactions" +
-                        (if (it.skippedOld > 0) ", skipped ${it.skippedOld} from before your start date" else "") +
-                        ". Tag them from “Needs a category”."
-                },
-                onFailure = { "Import failed: ${it.message}" },
-            )
-            busy = false
-        }
-    }
-
-    val smsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) runImport() else status = "SMS permission was not granted, so the old messages can't be read."
-    }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
@@ -154,45 +129,12 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
                     }
                     if (state.startDay > 0) SmallButton("Show older") { state.changeStartDay(0) }
                 }
-                Text(
-                    "Importing old SMS skips anything before this date. Choose “Show older” first if you want your history.",
-                    color = Pal.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp),
-                )
             }
         }
 
         Card {
             Column {
-                SectionTitle("SMS and data")
-                SettingRow("Old messages", "Pull in your past bank SMS once") { SmallButton("Import", primary = true) { if (smsGranted()) runImport() else smsPermission.launch(Manifest.permission.READ_SMS) } }
-                SettingRow("Fix double counting", "Remove repeats of the same bank debit") {
-                    SmallButton("Fix") {
-                        if (!smsGranted()) { smsPermission.launch(Manifest.permission.READ_SMS) } else scope.launch {
-                            busy = true
-                            status = "Looking for repeated debits…"
-                            val n = withContext(Dispatchers.IO) { runCatching { SmsProcessor.cleanDuplicates(context) + app.expensetracker.data.Plans.mergeOldRepeatEntries(context) } }
-                            state.refresh()
-                            status = n.fold({ if (it == 0) "No repeats found." else "Removed $it repeated ${if (it == 1) "spend" else "spends"}." }, { "Could not check: ${it.message}" })
-                            busy = false
-                        }
-                    }
-                }
-                SettingRow("Problem report", "Share odd bank messages (numbers masked)") {
-                    SmallButton("Share") {
-                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(android.content.Intent.EXTRA_TEXT, state.problemReport())
-                        }
-                        context.startActivity(android.content.Intent.createChooser(send, "Share problem report"))
-                    }
-                }
-                SettingRow("Needs a category", "${state.needsCategory.size} spends waiting") { SmallButton("Review") { onReviewNeeds() } }
-                SettingRow("Alert preview", "Send yourself a sample notification") {
-                    SmallButton("Preview") {
-                        val t = state.needsCategory.firstOrNull() ?: state.txns.firstOrNull { it.type == TxnType.DEBIT }
-                        if (t != null) Notifier.show(context, t) else status = "Add or import a spend first."
-                    }
-                }
+                SectionTitle("Your data")
                 SettingRow("Spreadsheet", "CSV of your spends") { SmallButton("Export CSV") { exportLauncher.launch("expenses-${LocalDate.now()}.csv") } }
                 if (status.isNotEmpty()) Text(status, color = Pal.accent, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
             }
@@ -225,14 +167,10 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
             Column {
                 SectionTitle("Good to know")
                 Text(
-                    "Everything stays on this phone. The app has no internet permission, and only bank debit or credit messages are saved.",
+                    "Everything stays on this phone. The app has no internet permission, and nothing is read from your messages. You add each spend yourself.",
                     color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
                 )
-                Text(
-                    "If SMS permission is greyed out: Settings › Apps › Spendr, tap ⋮ (top right) and choose “Allow restricted settings”, then grant SMS under Permissions.",
-                    color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp),
-                )
-                Text("Look: follows your phone's light or dark setting.", color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp))
+                Text("Look: soft clay cards on true black.", color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp))
             }
         }
     }

@@ -58,7 +58,7 @@ fun IncomeScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period
         }
         SmallButton("＋ Add income", primary = true) { onAdd() }
         if (credits.isEmpty()) {
-            EmptyState("💸", "No income in this period", "Salary, refunds and money received show up here from your bank messages.")
+            EmptyState("💸", "No income in this period", "Tap Add income whenever money comes in, from salary, family or friends.")
         } else {
             SectionTitle("By source")
             Card {

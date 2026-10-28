@@ -19,9 +19,9 @@ import app.expensetracker.core.Period
 import app.expensetracker.core.Reports
 import java.time.LocalDate
 
-/** Charts and the clever bits: where the money went, savings tips, subscriptions, what is due, what-ifs. */
+/** Charts: income against spending, and where the money went. */
 @Composable
-fun StatsScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period) -> Unit, onOffset: (Int) -> Unit, onInsights: (Period, LocalDate) -> Unit) {
+fun StatsScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period) -> Unit, onOffset: (Int) -> Unit) {
     val today = LocalDate.now()
     val anchor = Reports.shift(period, today, offset.toLong())
     val summary = Reports.summarize(state.reportTxns(), period, anchor)
@@ -50,21 +50,6 @@ fun StatsScreen(state: AppState, period: Period, offset: Int, onPeriod: (Period)
                 Card { Donut(state, summary.byCategory, summary.spentPaise) }
                 Card { CategoryBars(state, summary.byCategory, summary.spentPaise) }
             }
-            Card(Modifier.clickable { onInsights(period, anchor) }) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("✨", fontSize = 26.sp)
-                    Column(Modifier.weight(1f)) {
-                        Text("Insights and savings tips", color = Pal.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        Text("See what stands out and where you could save", color = Pal.muted, fontSize = 12.sp)
-                    }
-                    Text("›", color = Pal.muted, fontSize = 22.sp)
-                }
-            }
         }
-
-        MoneyCalendarCard(state)
-        SubscriptionRadarCard(state)
-        WhatIfCard(state)
-        PersonaCard(state)
     }
 }

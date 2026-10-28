@@ -7,12 +7,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
-import app.expensetracker.Notifier
 import app.expensetracker.Reminders
 import app.expensetracker.TodayWidget
 
 class MainActivity : ComponentActivity() {
-    /** Set when the user taps a transaction notification; the app opens that transaction's editor. */
+    /** Kept for opening one transaction's editor; nothing sets it now. */
     private val openTxnId = mutableLongStateOf(-1L)
     private val openAdd = mutableStateOf(false)
     private val locked = mutableStateOf(false)
@@ -21,11 +20,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        Notifier.ensureChannel(this)
         Reminders.schedule(this)
-        Thread { runCatching { app.expensetracker.data.SmsProcessor.catchUp(applicationContext) } }.start()
         locked.value = Lock.shouldLock(this)
-        openTxnId.longValue = intent.getLongExtra(Notifier.EXTRA_TXN_ID, -1L)
         openAdd.value = intent.getBooleanExtra(EXTRA_ADD, false)
         setContent {
             AppTheme {
@@ -58,12 +54,11 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        openTxnId.longValue = intent.getLongExtra(Notifier.EXTRA_TXN_ID, -1L)
         if (intent.getBooleanExtra(EXTRA_ADD, false)) openAdd.value = true
     }
 
     companion object {
-        /** Set by the widget's "Add expense" button to open the add sheet straight away. */
+        /** Set by the widget's "Add expense" button or a 9 pm / 10 pm reminder to open the add sheet straight away. */
         const val EXTRA_ADD = "open_add"
     }
 }

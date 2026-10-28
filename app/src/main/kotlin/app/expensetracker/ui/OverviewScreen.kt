@@ -85,7 +85,7 @@ fun OverviewScreen(state: AppState, period: Period, offset: Int, onPeriod: (Peri
                 }
                 Line("Repeats still to pay", "−" + short(safe.repeatsLeftPaise), Pal.bad)
                 Line("Spent so far", "−" + short(safe.spentPaise), Pal.bad)
-                if (safe.usingBudget) Text("No income known yet, so this starts from your budget. Tap Edit to type your income, or add a Salary repeat in Plans.", color = Pal.muted, fontSize = 11.sp)
+                if (safe.usingBudget) Text("No income known yet, so this starts from your budget. Tap Edit to type your income, or add income when it arrives.", color = Pal.muted, fontSize = 11.sp)
             }
         }
 
@@ -105,7 +105,7 @@ fun OverviewScreen(state: AppState, period: Period, offset: Int, onPeriod: (Peri
 
         SectionTitle("Latest")
         if (inRange.isEmpty()) {
-            EmptyState("🫧", "Nothing in this period", "Spends and income show up here as bank messages arrive.")
+            EmptyState("🫧", "Nothing in this period", "Add your spends each evening and they show up here.")
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 inRange.take(6).forEach { TxnRow(state, it) { onEdit(it) } }

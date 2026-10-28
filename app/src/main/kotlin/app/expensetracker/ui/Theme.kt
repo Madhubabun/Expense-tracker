@@ -10,7 +10,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
-/** Colours used across the app. Dark is true black for AMOLED screens; light follows the phone setting. */
+/** Colours used across the app. Dark is true black with clay-style raised cards for AMOLED screens; light follows the phone setting. */
 data class Palette(
     val bg: Color,
     val surface: Color,
@@ -30,7 +30,7 @@ data class Palette(
 private val heroBrush = Brush.linearGradient(listOf(Color(0xFF5B34FF), Color(0xFFB23CFF), Color(0xFFFF4F8F)))
 
 val DarkPalette = Palette(
-    bg = Color(0xFF000000), surface = Color(0xFF0E0E15), surface2 = Color(0xFF1A1A25), line = Color(0x17FFFFFF),
+    bg = Color(0xFF000000), surface = Color(0xFF17122A), surface2 = Color(0xFF282044), line = Color(0x1FFFFFFF),
     fg = Color(0xFFF7F6FB), muted = Color(0xFF9A98AD), accent = Color(0xFF9B6BFF), pink = Color(0xFFFF4FD8),
     cyan = Color(0xFF2EF2E0), good = Color(0xFF2EF2E0), bad = Color(0xFFFF5C7A), hero = heroBrush, dark = true,
 )

@@ -149,7 +149,7 @@ fun LoanSheet(state: AppState, editing: Loan?, onDone: () -> Unit) {
     }
 }
 
-val RepeatTypes = listOf("EMI", "Loan", "Mutual fund", "Rent", "Insurance", "Tithe", "Salary", "Other")
+val RepeatTypes = listOf("EMI", "Loan", "Mutual fund", "Rent", "Insurance", "Tithe", "Other")
 
 fun repeatEmoji(rtype: String) = when (rtype) {
     "EMI" -> "🏦"; "Loan" -> "🤝"; "Mutual fund" -> "📈"; "Rent" -> "🏡"; "Insurance" -> "🛡️"; "Tithe" -> "🙏"; "Salary" -> "💰"; else -> "🔁"
@@ -215,7 +215,7 @@ fun RepeatSheet(state: AppState, editing: Repeat?, onDone: () -> Unit) {
         else Text("Falls on the last Monday to Friday of each month, like a salary.", color = Pal.muted, fontSize = 12.sp)
         CategoryPicker(state, category, { category = it }, { creating = true })
         Text(
-            "You get a reminder at 9 am the day before and on the day. When the bank message arrives it is matched to this repeat and counted once. Short months use their last day.",
+            "You get a reminder at 9 am the day before and on the day. Tap Paid on Plans or Overview and the spend is added once. Short months use their last day.",
             color = Pal.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp),
         )
         GradientButton("Save", enabled = title.isNotBlank() && dom != null && (if (tithe) pct != null else (paise != null && paise > 0))) {
@@ -256,7 +256,7 @@ fun InvestSheet(state: AppState, editing: app.expensetracker.data.Investment?, o
     }
 }
 
-/** Type this pay cycle's income yourself. It replaces what the app worked out from your bank messages. */
+/** Type this pay cycle's income yourself. It replaces the income you added this cycle. */
 @Composable
 fun IncomeSheet(state: AppState, onDone: () -> Unit) {
     var text by remember { mutableStateOf(plain(state.cycleIncome())) }

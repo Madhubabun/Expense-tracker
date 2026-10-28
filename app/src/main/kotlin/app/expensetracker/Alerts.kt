@@ -36,17 +36,18 @@ object Alerts {
         if (Build.VERSION.SDK_INT < 26) return
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CH_BUDGET, "Budget alerts", NotificationManager.IMPORTANCE_DEFAULT))
-        nm.createNotificationChannel(NotificationChannel(CH_REMIND, "Daily summary and bills", NotificationManager.IMPORTANCE_DEFAULT))
+        nm.createNotificationChannel(NotificationChannel(CH_REMIND, "Daily reminders", NotificationManager.IMPORTANCE_DEFAULT))
     }
 
-    private fun post(context: Context, id: Int, channel: String, title: String, text: String) {
+    private fun post(context: Context, id: Int, channel: String, title: String, text: String, openAdd: Boolean = false) {
         ensureChannels(context)
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val open = PendingIntent.getActivity(
-            context, id, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            context, id, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra(MainActivity.EXTRA_ADD, openAdd),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n = NotificationCompat.Builder(context, channel)
@@ -90,65 +91,25 @@ object Alerts {
         }
     }
 
-    /** Tells you when a fresh spend is much bigger than what you usually pay at that shop or in that category. */
-    fun checkUnusual(context: Context, txnId: Long) {
-        if (!Prefs.flag(context, Prefs.UNUSUAL_ALERTS, true)) return
-        val db = Db.get(context)
-        val t = db.get(txnId) ?: return
-        if (t.type != TxnType.DEBIT || t.kind != TxnKind.NORMAL) return
-        val usual = app.expensetracker.core.Anomaly.usual(t.amountPaise, db.recentSpendAmounts(t.merchant, t.category, t.id)) ?: return
-        post(
-            context, 7400 + (t.id % 500).toInt(), CH_BUDGET,
-            "Bigger than usual: ${money(t.amountPaise)}",
-            "${t.merchant ?: t.category.ifEmpty { "This spend" }} is usually around ${money(usual)}. If that is right, ignore this.",
-        )
-    }
-
-    /** The 9 pm note: today's total and how many spends still need a category. */
-    fun nightlySummary(context: Context) {
+    /** The 9 pm and 10 pm nudges. Tapping one opens the add sheet. */
+    fun logReminder(context: Context, late: Boolean) {
         if (!Prefs.flag(context, Prefs.NIGHTLY_SUMMARY, true)) return
-        val t = Snapshot.today(context)
-        if (t.spentTodayPaise == 0L && t.needCategory == 0) return
-        val text = when {
-            t.needCategory > 0 -> "${t.needCategory} spends still need a category. Two taps and you're done."
-            else -> "Everything is tagged. Nice."
-        }
-        post(context, 7002, CH_REMIND, "Today: ${money(t.spentTodayPaise)} spent", text)
-    }
-
-    /** Reminds you on the day before (and on the day of) a bill that comes around every month. */
-    fun billReminders(context: Context) {
-        if (!Prefs.flag(context, Prefs.BILL_REMINDERS, true)) return
-        val today = LocalDate.now().toEpochDay()
-        detectBills(context, today).filter { it.nextDay - today in 0..1 }.forEachIndexed { i, bill ->
-            val whenText = if (bill.nextDay == today) "today" else "tomorrow"
-            post(context, 7200 + i, CH_REMIND, "${bill.label} is due $whenText", "Usually ${money(bill.amountPaise)}.")
-        }
-    }
-
-    /** Reminds you the day before and on the due date of a loan you owe or lent. */
-    fun loanReminders(context: Context) {
-        if (!Prefs.flag(context, Prefs.BILL_REMINDERS, true)) return
-        val today = LocalDate.now().toEpochDay()
-        app.expensetracker.data.Plans.loans(context).filter { it.dueDay > 0 && it.leftPaise > 0 && it.dueDay - today in 0..1 }.forEachIndexed { i, l ->
-            val whenText = if (l.dueDay == today) "today" else "tomorrow"
-            val title = if (l.borrowed) "Pay ${l.name} $whenText" else "${l.name} is due to repay you $whenText"
-            post(context, 7300 + i, CH_REMIND, title, "${money(l.leftPaise)} left.")
-        }
+        if (late) post(context, 7003, CH_REMIND, "Anything left to add?", "Last call for today's spends.", openAdd = true)
+        else post(context, 7002, CH_REMIND, "Log today's spends", "Tap to add what you spent today.", openAdd = true)
     }
 
     /** 9 am: the day before a repeat is due, and again on the day, unless its bank debit already arrived. */
     fun repeatReminders(context: Context) {
         if (!Prefs.flag(context, Prefs.REPEAT_REMINDERS, true)) return
         val today = LocalDate.now()
-        app.expensetracker.data.Plans.upcoming(context, today, 1).filter { it.repeat.type == TxnType.DEBIT || it.repeat.rtype == "Salary" }.forEach { d ->
+        app.expensetracker.data.Plans.upcoming(context, today, 1).filter { it.repeat.type == TxnType.DEBIT }.forEach { d ->
             val whenText = when {
                 d.day == today -> "today"
                 d.day == today.plusDays(1) -> "tomorrow"
                 else -> "overdue"
             }
             if (whenText == "overdue") return@forEach
-            val verb = if (d.repeat.type == TxnType.DEBIT) "due" else "expected"
+            val verb = "due"
             post(context, 7600 + (d.repeat.id % 400).toInt() * 2 + (if (d.day == today) 0 else 1), CH_REMIND, "${d.repeat.title} $verb $whenText", "${money(d.amountPaise)}")
         }
     }
