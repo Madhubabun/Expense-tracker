@@ -33,7 +33,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -127,16 +130,31 @@ fun HeroCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(Pal.hero).padding(20.dp)) { content() }
 }
 
+/** Draws a light glow up-left and a dark shadow down-right of a rounded slab, behind whatever it is applied to. */
+fun Modifier.clayShadow(corner: androidx.compose.ui.unit.Dp, light: Color, dark: Color): Modifier = drawBehind {
+    drawIntoCanvas { canvas ->
+        val r = corner.toPx()
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.color = android.graphics.Color.BLACK
+        paint.setShadowLayer(14.dp.toPx(), -5.dp.toPx(), -5.dp.toPx(), light.toArgb())
+        canvas.nativeCanvas.drawRoundRect(0f, 0f, size.width, size.height, r, r, paint)
+        paint.setShadowLayer(14.dp.toPx(), 7.dp.toPx(), 8.dp.toPx(), dark.toArgb())
+        canvas.nativeCanvas.drawRoundRect(0f, 0f, size.width, size.height, r, r, paint)
+    }
+}
+
 @Composable
 fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    // Clay look: a soft puffy slab that catches light on its top-left edge and sinks into shadow bottom-right.
-    val shape = RoundedCornerShape(28.dp)
+    // Clay look: a puffy slab. A pale glow sits top-left and a deep shadow bottom-right, like light on moulded clay.
+    val shape = RoundedCornerShape(30.dp)
+    val glow = Pal.fg.copy(alpha = .16f)
+    val deep = Color.Black
     Box(
         modifier.fillMaxWidth()
-            .shadow(12.dp, shape, ambientColor = Pal.accent.copy(alpha = .35f), spotColor = Pal.accent.copy(alpha = .25f))
+            .clayShadow(30.dp, glow, deep)
             .clip(shape)
             .background(Brush.linearGradient(listOf(Pal.surface2, Pal.surface)), shape)
-            .border(1.5.dp, Brush.linearGradient(listOf(Pal.fg.copy(alpha = .30f), Pal.fg.copy(alpha = .04f), Color.Black.copy(alpha = .5f))), shape)
+            .border(1.5.dp, Brush.linearGradient(listOf(Pal.fg.copy(alpha = .38f), Pal.fg.copy(alpha = .05f), Color.Black.copy(alpha = .6f))), shape)
             .padding(18.dp),
     ) { content() }
 }
@@ -186,7 +204,7 @@ fun TxnRow(state: AppState, t: Txn, onEdit: () -> Unit) {
     SwipeToDismissBox(
         state = swipe,
         enableDismissFromStartToEnd = false,
-        modifier = Modifier.clip(RoundedCornerShape(18.dp)),
+        modifier = Modifier.clayShadow(22.dp, p.fg.copy(alpha = .12f), Color.Black).clip(RoundedCornerShape(22.dp)),
         backgroundContent = {
             Box(
                 Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(p.accent, p.pink))).padding(end = 20.dp),
@@ -196,13 +214,13 @@ fun TxnRow(state: AppState, t: Txn, onEdit: () -> Unit) {
     ) {
         val debit = t.type == TxnType.DEBIT
         Row(
-            Modifier.fillMaxWidth().background(p.surface).clickable(onClick = onEdit).padding(10.dp),
+            Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(p.surface2, p.surface))).clickable(onClick = onEdit).padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             CategoryTile(state, t.category)
             Column(Modifier.weight(1f)) {
-                Text(t.merchant ?: t.bank ?: "Transaction", color = p.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t.merchant ?: t.comment.takeIf { it.isNotBlank() } ?: t.category.ifEmpty { "Needs a category" }, color = p.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     val time = timeText(t.atMillis)
                     if (time.isNotEmpty()) Text(time, color = p.muted, fontSize = 12.sp)

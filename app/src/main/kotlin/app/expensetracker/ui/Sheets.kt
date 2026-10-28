@@ -181,7 +181,7 @@ fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: 
 
     AppSheet(onDismiss) {
         Text("$sign ${rupees(txn.amountPaise)}", color = Pal.fg, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        Text(txn.merchant ?: txn.bank ?: "Bank SMS", color = Pal.muted)
+        Text(txn.merchant ?: txn.category.ifEmpty { "Needs a category" }, color = Pal.muted)
         if (txn.currency != "INR") Text("Entered as ${txn.currency} ${BigDecimal(txn.origPaise).movePointLeft(2).toPlainString()}", color = Pal.muted, fontSize = 12.sp)
         CategoryPicker(state, category, { category = it }, { creating = true })
         OutlinedTextField(comment, { comment = it }, label = { Text("Comment") }, modifier = Modifier.fillMaxWidth())

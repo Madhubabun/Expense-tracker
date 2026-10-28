@@ -170,7 +170,8 @@ fun SettingsScreen(state: AppState, onNewCategory: () -> Unit, onReviewNeeds: ()
                     "Everything stays on this phone. The app has no internet permission, and nothing is read from your messages. You add each spend yourself.",
                     color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
                 )
-                Text("Look: soft clay cards on true black.", color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp))
+                val build = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode }.getOrDefault(0L)
+                Text("Version: build $build · clay look", color = Pal.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp))
             }
         }
     }
