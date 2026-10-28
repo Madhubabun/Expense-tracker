@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification body: one headline and four category buttons. The comment box is a standard reply action. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:textAppearance="@android:style/TextAppearance.Material.Notification.Title"
+        android:textSize="14sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal"
+        android:weightSum="4">
+
+        <TextView
+            android:id="@+id/btn1"
+            style="@style/NotifButton" />
+
+        <TextView
+            android:id="@+id/btn2"
+            style="@style/NotifButton" />
+
+        <TextView
+            android:id="@+id/btn3"
+            style="@style/NotifButton" />
+
+        <TextView
+            android:id="@+id/btn4"
+            style="@style/NotifButton"
+            android:layout_marginEnd="0dp" />
+    </LinearLayout>
+</LinearLayout>
