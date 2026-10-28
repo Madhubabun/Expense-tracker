@@ -97,10 +97,11 @@ internal fun GradientButton(text: String, enabled: Boolean = true, onClick: () -
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun CategoryPicker(state: AppState, selected: String, onSelect: (String) -> Unit, onNew: () -> Unit) {
+internal fun CategoryPicker(state: AppState, selected: String, onSelect: (String) -> Unit, onNew: () -> Unit, income: Boolean = false) {
     val p = Pal
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        state.pickable.forEach { c ->
+        // Transfer, Cash, Investments and card bills are left out of income on purpose, so don't offer them for money received.
+        state.pickable.filter { !income || it.name !in app.expensetracker.core.Categories.excludedFromTotals }.forEach { c ->
             val on = c.name == selected
             Row(
                 Modifier.clip(CircleShape)
@@ -183,7 +184,7 @@ fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: 
         Text("$sign ${rupees(txn.amountPaise)}", color = Pal.fg, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Text(txn.merchant ?: txn.category.ifEmpty { "Needs a category" }, color = Pal.muted)
         if (txn.currency != "INR") Text("Entered as ${txn.currency} ${BigDecimal(txn.origPaise).movePointLeft(2).toPlainString()}", color = Pal.muted, fontSize = 12.sp)
-        CategoryPicker(state, category, { category = it }, { creating = true })
+        CategoryPicker(state, category, { category = it }, { creating = true }, income = txn.type == TxnType.CREDIT)
         OutlinedTextField(comment, { comment = it }, label = { Text("Comment") }, modifier = Modifier.fillMaxWidth())
         AccountPicker(state, accountId) { accountId = it }
         TagField(state, tags) { tags = it }
@@ -256,7 +257,11 @@ fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntr
                 Text(
                     label, color = Pal.fg, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                     modifier = Modifier.clip(CircleShape).background(if (on) Pal.accent.copy(alpha = .22f) else Pal.surface2)
-                        .border(1.dp, if (on) Pal.accent else Pal.line, CircleShape).clickable { type = t }.padding(horizontal = 16.dp, vertical = 9.dp),
+                        .border(1.dp, if (on) Pal.accent else Pal.line, CircleShape).clickable {
+                        type = t
+                        if (t == TxnType.CREDIT && (category in app.expensetracker.core.Categories.excludedFromTotals || category == "Food")) category = "Salary"
+                        if (t == TxnType.DEBIT && category == "Salary") category = "Food"
+                    }.padding(horizontal = 16.dp, vertical = 9.dp),
                 )
             }
         }
@@ -277,7 +282,7 @@ fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntr
             }
             if (currency != "INR" && paise != null) Text("≈ ${rupees(paise)} at ${state.rates[currency]} per $currency", color = Pal.muted, fontSize = 12.sp)
         }
-        CategoryPicker(state, category, { category = it; picked = true }, { creating = true })
+        CategoryPicker(state, category, { category = it; picked = true }, { creating = true }, income = type == TxnType.CREDIT)
         OutlinedTextField(
             note,
             { note = it; if (!picked) state.suggestCategory(it)?.let { c -> category = c } },

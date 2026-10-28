@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -117,7 +118,7 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
         },
         containerColor = Color.Transparent,
         bottomBar = {
-            NavigationBar(containerColor = Pal.surface) {
+            NavigationBar(containerColor = Pal.surface, windowInsets = androidx.compose.foundation.layout.WindowInsets.navigationBars.add(androidx.compose.foundation.layout.WindowInsets(bottom = 14.dp))) {
                 Tab.entries.forEach { t ->
                     NavigationBarItem(
                         selected = tab == t,
