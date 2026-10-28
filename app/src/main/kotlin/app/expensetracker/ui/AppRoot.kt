@@ -10,6 +10,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.navigationBars
@@ -47,6 +52,11 @@ import app.expensetracker.data.Txn
 private enum class Tab(val label: String, val icon: String) {
     OVERVIEW("Overview", "🏠"), EXPENSES("Expenses", "💸"), INCOME("Income", "💰"), STATS("Statistics", "📊"), PLANS("Plans", "🗂️"),
 }
+
+private val TabColors = listOf(
+    Color(0xFFA98BFF) to Color(0xFF4A2BD6), Color(0xFF6FE0FF) to Color(0xFF1F6FBF), Color(0xFF8BF0B4) to Color(0xFF16875A),
+    Color(0xFFFFB36B) to Color(0xFFC4500F), Color(0xFFFF8AC9) to Color(0xFFB02B7C),
+)
 
 @Composable
 fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = false, onOpenAddHandled: () -> Unit = {}) {
@@ -119,18 +129,18 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
         },
         containerColor = Color.Transparent,
         bottomBar = {
-            NavigationBar(containerColor = Pal.surface, windowInsets = androidx.compose.foundation.layout.WindowInsets.navigationBars.add(androidx.compose.foundation.layout.WindowInsets(bottom = 14.dp))) {
-                Tab.entries.forEach { t ->
-                    NavigationBarItem(
-                        selected = tab == t,
-                        onClick = { tab = t },
-                        icon = { Text(t.icon, fontSize = 20.sp) },
-                        label = { Text(t.label, fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = Pal.accent.copy(alpha = .25f),
-                            selectedTextColor = Pal.fg, unselectedTextColor = Pal.muted,
-                        ),
-                    )
+            // No bar: five glossy 3D icons float above the bottom edge, and the open tab rises higher.
+            Row(
+                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp).padding(top = 6.dp, bottom = 10.dp),
+                horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.Bottom,
+            ) {
+                Tab.entries.forEachIndexed { i, t ->
+                    val on = tab == t
+                    val (top, bottom) = TabColors[i]
+                    Column(Modifier.clip(RoundedCornerShape(18.dp)).clickable { tab = t }.padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        GlossTile(if (on) 54.dp else 46.dp, top, bottom, Modifier.offset(y = if (on) (-10).dp else 0.dp)) { Text(t.icon, fontSize = if (on) 25.sp else 21.sp) }
+                        Text(t.label, fontSize = 10.sp, color = if (on) Pal.fg else Pal.muted, modifier = Modifier.padding(top = if (on) 0.dp else 4.dp), maxLines = 1)
+                    }
                 }
             }
         },
@@ -143,20 +153,18 @@ fun AppRoot(openTxnId: Long, onOpenTxnHandled: () -> Unit, openAdd: Boolean = fa
                 Tab.STATS -> StatsScreen(state, period, offset, onPeriod, onOffset)
                 Tab.PLANS -> PlansScreen(state)
             }
-            Box(
-                Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 12.dp).size(40.dp).clip(CircleShape)
-                    .background(Pal.surface2).clickable { settingsOpen = true },
-                contentAlignment = Alignment.Center,
-            ) { Text("⚙️", fontSize = 18.sp) }
+            GlossTile(40.dp, Color(0xFF4A4668), Color(0xFF15131F), Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 12.dp).clickable { settingsOpen = true }) { Text("⚙️", fontSize = 18.sp) }
             if (tab != Tab.PLANS) {
                 Row(
                     Modifier.align(Alignment.BottomEnd).padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Box(Modifier.size(46.dp).clip(CircleShape).background(Pal.surface2).clickable { searching = true }, contentAlignment = Alignment.Center) { Text("🔍", fontSize = 19.sp) }
+                    GlossTile(46.dp, Color(0xFF4A4668), Color(0xFF15131F), Modifier.clickable { searching = true }) { Text("🔍", fontSize = 19.sp) }
                     Row(
-                        Modifier.clip(CircleShape).background(Brush.horizontalGradient(listOf(Pal.accent, Pal.pink)))
+                        Modifier.shadow(14.dp, CircleShape, ambientColor = Pal.accent, spotColor = Pal.accent).clip(CircleShape)
+                            .background(Brush.horizontalGradient(listOf(Pal.accent, Pal.pink)))
+                            .background(Brush.verticalGradient(0f to Color.White.copy(alpha = .35f), .5f to Color.White.copy(alpha = .06f), .51f to Color.Transparent))
                             .clickable { if (tab == Tab.INCOME) startIncome() else adding = true }.padding(horizontal = 20.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

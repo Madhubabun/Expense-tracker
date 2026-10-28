@@ -33,6 +33,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -89,17 +91,7 @@ fun CategoryTile(state: AppState, category: String, size: Dp = 44.dp, modifier: 
 fun CategoryTile(cat: Category?, state: AppState, size: Dp = 44.dp, modifier: Modifier = Modifier) {
     val p = Pal
     val tint = if (cat != null) Color(cat.color) else Color(0xFFB0AEC4)
-    Box(
-        modifier
-            .size(size)
-            .clip(RoundedCornerShape(size * 0.34f))
-            .background(
-                Brush.linearGradient(
-                    listOf(tint.copy(alpha = .45f).compositeOver(p.surface2), tint.copy(alpha = .14f).compositeOver(p.surface2)),
-                ),
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
+    GlossTile(size, lerp(tint, Color.White, .22f), lerp(tint, Color.Black, .5f), modifier) {
         val bmp = cat?.let { state.imageOf(it) }
         if (bmp != null) {
             Image(bmp.asImageBitmap(), contentDescription = null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -107,6 +99,21 @@ fun CategoryTile(cat: Category?, state: AppState, size: Dp = 44.dp, modifier: Mo
             Text(cat?.emoji ?: "🧾", fontSize = (size.value * 0.46f).sp)
         }
     }
+}
+
+/** A raised glossy 3D tile: a colour gradient, a bright reflection across the top, a light edge and a soft glow under it. */
+@Composable
+fun GlossTile(size: Dp, top: Color, bottom: Color, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(size * 0.34f)
+    Box(
+        modifier.size(size)
+            .shadow((size.value * 0.22f).dp, shape, ambientColor = top, spotColor = Color.Black)
+            .clip(shape)
+            .background(Brush.linearGradient(listOf(top, bottom)), shape)
+            .background(Brush.verticalGradient(0f to Color.White.copy(alpha = .42f), .45f to Color.White.copy(alpha = .08f), .46f to Color.Transparent), shape)
+            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = .65f), Color.White.copy(alpha = .08f))), shape),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
 
 @Composable
@@ -127,7 +134,15 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun HeroCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Box(modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(Pal.hero).padding(20.dp)) { content() }
+    val shape = RoundedCornerShape(28.dp)
+    Box(
+        modifier.fillMaxWidth()
+            .shadow(20.dp, shape, ambientColor = Pal.accent, spotColor = Pal.accent)
+            .clip(shape).background(Pal.hero, shape)
+            .background(Brush.verticalGradient(0f to Color.White.copy(alpha = .30f), .5f to Color.White.copy(alpha = .05f), .51f to Color.Transparent), shape)
+            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = .55f), Color.White.copy(alpha = .05f))), shape)
+            .padding(20.dp),
+    ) { content() }
 }
 
 /** Draws a light glow up-left and a dark shadow down-right of a rounded slab, behind whatever it is applied to. */
@@ -145,16 +160,14 @@ fun Modifier.clayShadow(corner: androidx.compose.ui.unit.Dp, light: Color, dark:
 
 @Composable
 fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    // Clay look: a puffy slab. A pale glow sits top-left and a deep shadow bottom-right, like light on moulded clay.
-    val shape = RoundedCornerShape(30.dp)
-    val glow = Pal.fg.copy(alpha = .16f)
-    val deep = Color.Black
+    // Dark raised card: a soft light edge on top and a deep shadow underneath.
+    val shape = RoundedCornerShape(26.dp)
     Box(
         modifier.fillMaxWidth()
-            .clayShadow(30.dp, glow, deep)
+            .clayShadow(26.dp, Pal.fg.copy(alpha = .06f), Color.Black)
             .clip(shape)
             .background(Brush.linearGradient(listOf(Pal.surface2, Pal.surface)), shape)
-            .border(1.5.dp, Brush.linearGradient(listOf(Pal.fg.copy(alpha = .38f), Pal.fg.copy(alpha = .05f), Color.Black.copy(alpha = .6f))), shape)
+            .border(1.dp, Brush.verticalGradient(listOf(Pal.fg.copy(alpha = .18f), Pal.fg.copy(alpha = .04f))), shape)
             .padding(18.dp),
     ) { content() }
 }

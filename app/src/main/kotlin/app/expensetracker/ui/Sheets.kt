@@ -184,7 +184,7 @@ fun EditTxnSheet(state: AppState, txn: Txn, onSave: (category: String, comment: 
         Text("$sign ${rupees(txn.amountPaise)}", color = Pal.fg, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Text(txn.merchant ?: txn.category.ifEmpty { "Needs a category" }, color = Pal.muted)
         if (txn.currency != "INR") Text("Entered as ${txn.currency} ${BigDecimal(txn.origPaise).movePointLeft(2).toPlainString()}", color = Pal.muted, fontSize = 12.sp)
-        CategoryPicker(state, category, { category = it }, { creating = true }, income = txn.type == TxnType.CREDIT)
+        CategoryPicker(state, category, { category = it }, { creating = true })
         OutlinedTextField(comment, { comment = it }, label = { Text("Comment") }, modifier = Modifier.fillMaxWidth())
         AccountPicker(state, accountId) { accountId = it }
         TagField(state, tags) { tags = it }
@@ -259,7 +259,7 @@ fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntr
                     modifier = Modifier.clip(CircleShape).background(if (on) Pal.accent.copy(alpha = .22f) else Pal.surface2)
                         .border(1.dp, if (on) Pal.accent else Pal.line, CircleShape).clickable {
                         type = t
-                        if (t == TxnType.CREDIT && (category in app.expensetracker.core.Categories.excludedFromTotals || category == "Food")) category = "Salary"
+                        if (t == TxnType.CREDIT && category == "Food") category = "Salary"
                         if (t == TxnType.DEBIT && category == "Salary") category = "Food"
                     }.padding(horizontal = 16.dp, vertical = 9.dp),
                 )
@@ -282,12 +282,15 @@ fun AddSpendSheet(state: AppState, onAdd: (NewSpend) -> Unit, initial: VoiceEntr
             }
             if (currency != "INR" && paise != null) Text("≈ ${rupees(paise)} at ${state.rates[currency]} per $currency", color = Pal.muted, fontSize = 12.sp)
         }
-        CategoryPicker(state, category, { category = it; picked = true }, { creating = true }, income = type == TxnType.CREDIT)
+        CategoryPicker(state, category, { category = it; picked = true }, { creating = true })
         OutlinedTextField(
             note,
             { note = it; if (!picked) state.suggestCategory(it)?.let { c -> category = c } },
             label = { Text("What was it? (optional)") }, modifier = Modifier.fillMaxWidth(),
         )
+        if (type == TxnType.CREDIT && category in app.expensetracker.core.Categories.excludedFromTotals) {
+            Text("$category is money moving between your own accounts, so it is not counted as income.", color = Pal.muted, fontSize = 12.sp)
+        }
         OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true, isError = day == null, modifier = Modifier.fillMaxWidth())
         if (type == TxnType.DEBIT) {
             Row(Modifier.fillMaxWidth().clickable { repeat = !repeat }, verticalAlignment = Alignment.CenterVertically) {

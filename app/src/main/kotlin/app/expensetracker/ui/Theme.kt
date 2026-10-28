@@ -30,7 +30,7 @@ data class Palette(
 private val heroBrush = Brush.linearGradient(listOf(Color(0xFF5B34FF), Color(0xFFB23CFF), Color(0xFFFF4F8F)))
 
 val DarkPalette = Palette(
-    bg = Color(0xFF000000), surface = Color(0xFF1A1432), surface2 = Color(0xFF30265A), line = Color(0x1FFFFFFF),
+    bg = Color(0xFF000000), surface = Color(0xFF0F0E16), surface2 = Color(0xFF1C1A29), line = Color(0x1FFFFFFF),
     fg = Color(0xFFF7F6FB), muted = Color(0xFF9A98AD), accent = Color(0xFF9B6BFF), pink = Color(0xFFFF4FD8),
     cyan = Color(0xFF2EF2E0), good = Color(0xFF2EF2E0), bad = Color(0xFFFF5C7A), hero = heroBrush, dark = true,
 )
